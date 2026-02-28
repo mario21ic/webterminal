@@ -665,7 +665,7 @@ app.post('/api/containers/:id/commit', requireAuthAPI, async (req, res) => {
 app.post('/api/containers/run', requireAuthAPI, async (req, res) => {
   if (!docker) return res.status(503).json({ error: 'Docker not available' });
   const { username } = req.session.user;
-  let { image, volume, network, mem = 512, cpu = 1, shell, cmd, user: userParam } = req.body;
+  let { image, volume, network, mem = 512, cpu = 1, shell, cmd, entrypoint, user: userParam } = req.body;
 
   if (!image?.trim()) return res.status(400).json({ error: 'Image is required' });
 
@@ -707,9 +707,10 @@ app.post('/api/containers/run', requireAuthAPI, async (req, res) => {
     '--label=webterminal=true',
     '--memory', `${mem}m`,
     '--cpus',   String(cpu),
-    ...(userParam && userParam !== 'root' ? ['--user', userParam] : []),
-    ...(volume    ? ['-v', `${volume}:/data`]    : []),
-    ...(networkName ? ['--network', networkName] : []),
+    ...(userParam  && userParam !== 'root' ? ['--user',       userParam]  : []),
+    ...(entrypoint                         ? ['--entrypoint', entrypoint] : []),
+    ...(volume      ? ['-v', `${volume}:/data`]    : []),
+    ...(networkName ? ['--network', networkName]   : []),
     image.trim(),
     ...(shell ? ['sh', '-c', cmd || 'command -v bash >/dev/null 2>&1 && exec bash || exec sh'] : []),
   ];
@@ -854,9 +855,10 @@ wss.on('connection', async (ws, req) => {
     const mem  = Math.max(64,  Math.min(8192, parseInt(url.searchParams.get('mem')  || '512', 10)));
     const cpu  = Math.max(0.1, Math.min(8,    parseFloat(url.searchParams.get('cpu') || '1')));
 
-    const shell     = url.searchParams.get('shell') === '1';
-    const cmdParam  = url.searchParams.get('cmd')  || null;
-    const userParam = url.searchParams.get('user') || null; // 'root' | 'uid:gid' | null
+    const shell           = url.searchParams.get('shell') === '1';
+    const cmdParam        = url.searchParams.get('cmd')        || null;
+    const entrypointParam = url.searchParams.get('entrypoint') || null;
+    const userParam       = url.searchParams.get('user')       || null; // 'root' | 'uid:gid' | null
 
     console.log(`[${username}] run → ${imageName}${volumeName ? ` +vol:${volumeName}` : ''}${networkName ? ` +net:${networkName}` : ''} mem:${mem}m cpu:${cpu} user:${userParam || 'default'} shell:${shell}`);
     cmd  = 'docker';
@@ -865,7 +867,8 @@ wss.on('connection', async (ws, req) => {
       '--label=webterminal=true',
       '--memory', `${mem}m`,
       '--cpus',   String(cpu),
-      ...(userParam && userParam !== 'root' ? ['--user', userParam] : []),
+      ...(userParam       && userParam !== 'root' ? ['--user',       userParam]       : []),
+      ...(entrypointParam                         ? ['--entrypoint', entrypointParam] : []),
       ...(volumeName  ? ['-v', `${volumeName}:/data`]  : []),
       ...(networkName ? ['--network', networkName]      : []),
       imageName,

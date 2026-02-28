@@ -934,6 +934,14 @@
         value="command -v bash >/dev/null 2>&1 &amp;&amp; exec bash || exec sh"
         disabled />
     </div>
+    <div class="checkbox-row override-cmd-row">
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="override-ep-check" disabled onchange="onOverrideEpCheck()" />
+        <label for="override-ep-check">Override entrypoint</label>
+      </div>
+      <input type="text" id="override-ep-input" class="override-cmd-input"
+        placeholder="/bin/sh" disabled />
+    </div>
     <button class="launch-btn" id="image-btn" disabled onclick="go('image')">
       Launch Container →
     </button>
@@ -1781,16 +1789,20 @@
     const runUser     = document.getElementById('run-user-check');
     const rootChk     = document.getElementById('root-check');
     const overrideChk = document.getElementById('override-cmd-check');
-    runUser.disabled     = !shell;
-    rootChk.disabled     = !shell;
-    overrideChk.disabled = !shell;
+    const overrideEpChk = document.getElementById('override-ep-check');
+    runUser.disabled       = !shell;
+    rootChk.disabled       = !shell;
+    overrideChk.disabled   = !shell;
+    overrideEpChk.disabled = !shell;
     if (!shell) {
-      runUser.checked     = false;
-      rootChk.checked     = false;
-      overrideChk.checked = false;
+      runUser.checked       = false;
+      rootChk.checked       = false;
+      overrideChk.checked   = false;
+      overrideEpChk.checked = false;
       document.getElementById('uid-input').disabled          = true;
       document.getElementById('gid-input').disabled          = true;
       document.getElementById('override-cmd-input').disabled = true;
+      document.getElementById('override-ep-input').disabled  = true;
     }
   }
 
@@ -1798,6 +1810,12 @@
     const checked = document.getElementById('override-cmd-check').checked;
     document.getElementById('override-cmd-input').disabled = !checked;
     if (checked) document.getElementById('override-cmd-input').focus();
+  }
+
+  function onOverrideEpCheck() {
+    const checked = document.getElementById('override-ep-check').checked;
+    document.getElementById('override-ep-input').disabled = !checked;
+    if (checked) document.getElementById('override-ep-input').focus();
   }
 
   function onRunUserCheck() {
@@ -1835,18 +1853,21 @@
       const runUser  = document.getElementById('run-user-check').checked;
       const uid      = document.getElementById('uid-input').value || '1000';
       const gid      = document.getElementById('gid-input').value || '1000';
-      const override = document.getElementById('override-cmd-check').checked;
-      const cmdVal   = document.getElementById('override-cmd-input').value.trim();
+      const override   = document.getElementById('override-cmd-check').checked;
+      const cmdVal     = document.getElementById('override-cmd-input').value.trim();
+      const overrideEp = document.getElementById('override-ep-check').checked;
+      const epVal      = document.getElementById('override-ep-input').value.trim();
 
       const userParam = root ? 'root' : (runUser ? `${uid}:${gid}` : null);
 
       if (bg) {
         const body = { image: selectedImage, mem, cpu };
-        if (vol)                    body.volume  = vol;
-        if (net)                    body.network = net;
-        if (shell)                  body.shell   = true;
-        if (override && cmdVal)     body.cmd     = cmdVal;
-        if (userParam)              body.user    = userParam;
+        if (vol)                    body.volume     = vol;
+        if (net)                    body.network    = net;
+        if (shell)                  body.shell      = true;
+        if (override && cmdVal)     body.cmd        = cmdVal;
+        if (overrideEp && epVal)    body.entrypoint = epVal;
+        if (userParam)              body.user       = userParam;
         const res = await apiFetch('/api/containers/run', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1861,9 +1882,10 @@
         if (vol)   url += `&volume=${encodeURIComponent(vol)}`;
         if (net)   url += `&network=${encodeURIComponent(net)}`;
         url += `&mem=${encodeURIComponent(mem)}&cpu=${encodeURIComponent(cpu)}`;
-        if (shell)          url += '&shell=1';
-        if (override && cmdVal) url += `&cmd=${encodeURIComponent(cmdVal)}`;
-        if (userParam)      url += `&user=${encodeURIComponent(userParam)}`;
+        if (shell)               url += '&shell=1';
+        if (override && cmdVal)  url += `&cmd=${encodeURIComponent(cmdVal)}`;
+        if (overrideEp && epVal) url += `&entrypoint=${encodeURIComponent(epVal)}`;
+        if (userParam)           url += `&user=${encodeURIComponent(userParam)}`;
         window.open(url, '_blank');
       }
     }

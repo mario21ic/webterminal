@@ -202,9 +202,10 @@
   const networkName = params.get('network');
   const memVal      = params.get('mem') || '512';
   const cpuVal      = params.get('cpu') || '1';
-  const shellVal    = params.get('shell');
-  const cmdVal      = params.get('cmd');
-  const userVal     = params.get('user');
+  const shellVal      = params.get('shell');
+  const cmdVal        = params.get('cmd');
+  const entrypointVal = params.get('entrypoint');
+  const userVal       = params.get('user');
   const rootVal     = params.get('root');
 
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -220,9 +221,10 @@
     if (volumeName)  wsUrl += `&volume=${encodeURIComponent(volumeName)}`;
     if (networkName) wsUrl += `&network=${encodeURIComponent(networkName)}`;
     wsUrl += `&mem=${encodeURIComponent(memVal)}&cpu=${encodeURIComponent(cpuVal)}`;
-    if (shellVal)    wsUrl += `&shell=${encodeURIComponent(shellVal)}`;
-    if (cmdVal)      wsUrl += `&cmd=${encodeURIComponent(cmdVal)}`;
-    if (userVal)     wsUrl += `&user=${encodeURIComponent(userVal)}`;
+    if (shellVal)      wsUrl += `&shell=${encodeURIComponent(shellVal)}`;
+    if (cmdVal)        wsUrl += `&cmd=${encodeURIComponent(cmdVal)}`;
+    if (entrypointVal) wsUrl += `&entrypoint=${encodeURIComponent(entrypointVal)}`;
+    if (userVal)       wsUrl += `&user=${encodeURIComponent(userVal)}`;
     if (rootVal)     wsUrl += `&root=${encodeURIComponent(rootVal)}`;
     sessionIcon  = '🐳';
     const badges = [

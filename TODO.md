@@ -36,6 +36,7 @@
 - Always run the attach command unless the run as root checkbox is checked ✅
 - Add Run Shell, otherwise commands from Dockerfile ✅
 - Add override commands using shell ✅
+- Add override entrypoint ✅
 - Run a container without a shell, just command by default like nginx: nginx -g 'daemon off;' ✅
 - Add a modal to view docker image details ✅
 - Launch Container in background mode ✅
