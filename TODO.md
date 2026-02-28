@@ -1,14 +1,15 @@
-- Add volumes to persist user data
-- Add networking using bridge driver to divide containers.
-- Add limit default ram 512mb and cpu 1
+- Add volumes to persist user data ✅
+- Add networking using bridge driver to divide containers. ✅
+- Add limit default ram 512mb and cpu 1 ✅
 - Add default user non root
 - Add cli template to run container or builder (gui)
-- Add details on running containers
-- Show details of containers like IP
+- Add details on running containers ✅
+- Show details of containers like IP ✅
 - Admin panel with users and their containers (running, stopped, etc)
 - Admin panel with list of list to disable them
 - Admin panel reset user password
 - Reset password with email
-- Create a new docker image in each user, only visible for user that created.
+- Create a new docker image in each user, only visible for user that created. ✅
 - Create a image from running container, only visible for user.
 - Monitor docker containers.
+- Add a section to set environments vars, then add them into containers

@@ -168,7 +168,7 @@
 
     .td-actions { display: flex; gap: 8px; }
 
-    .btn-edit, .btn-delete {
+    .btn-edit, .btn-delete, .btn-reset-pass {
       border: none;
       border-radius: 5px;
       padding: 5px 12px;
@@ -177,10 +177,12 @@
       cursor: pointer;
       transition: opacity .15s;
     }
-    .btn-edit   { background: #21262d; color: #79c0ff; border: 1px solid #388bfd44; }
-    .btn-delete { background: #21262d; color: #f85149; border: 1px solid #f8514944; }
-    .btn-edit:hover   { background: #1c2c3b; }
-    .btn-delete:hover { background: #4a1c1c; }
+    .btn-edit       { background: #21262d; color: #79c0ff; border: 1px solid #388bfd44; }
+    .btn-delete     { background: #21262d; color: #f85149; border: 1px solid #f8514944; }
+    .btn-reset-pass { background: #21262d; color: #e3b341; border: 1px solid #e3b34144; }
+    .btn-edit:hover       { background: #1c2c3b; }
+    .btn-delete:hover     { background: #4a1c1c; }
+    .btn-reset-pass:hover { background: #2d2208; }
 
     .empty-row td {
       text-align: center;
@@ -345,7 +347,32 @@
   </div>
 </main>
 
-<!-- ── Modal ──────────────────────────────────────────────────────────────── -->
+<!-- ── Reset Password Modal ─────────────────────────────────────────────── -->
+<div class="modal-overlay" id="rp-modal-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="rp-modal-title">Reset Password</h3>
+      <button class="modal-close" onclick="closeResetModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>New Password</label>
+        <input type="password" id="rp-new" autocomplete="new-password" placeholder="Min. 6 characters" />
+      </div>
+      <div class="form-group">
+        <label>Confirm New Password</label>
+        <input type="password" id="rp-confirm" autocomplete="new-password" placeholder="Repeat new password" />
+      </div>
+      <div class="form-error" id="rp-error"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeResetModal()">Cancel</button>
+      <button class="btn-primary" id="rp-submit" onclick="submitResetPassword()">Reset Password</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── User Modal ──────────────────────────────────────────────────────────── -->
 <div class="modal-overlay" id="modal-overlay">
   <div class="modal">
     <div class="modal-header">
@@ -357,10 +384,9 @@
         <label>Username</label>
         <input type="text" id="f-username" autocomplete="off" placeholder="e.g. alice" />
       </div>
-      <div class="form-group">
-        <label id="f-pass-label">Password</label>
+      <div class="form-group" id="f-pass-group">
+        <label>Password</label>
         <input type="password" id="f-password" autocomplete="new-password" placeholder="Min. 6 characters" />
-        <span class="form-hint" id="f-pass-hint"></span>
       </div>
       <div class="form-group">
         <label>Role</label>
@@ -436,11 +462,15 @@
           <td class="td-date">${date}</td>
           <td class="td-actions">
             <button class="btn-edit"
-              onclick="openEdit(${JSON.stringify(u.username)}, ${JSON.stringify(u.role)})">
+              onclick='openEdit(${JSON.stringify(u.username)}, ${JSON.stringify(u.role)})'>
               Edit
             </button>
+            <button class="btn-reset-pass"
+              onclick='openResetPass(${JSON.stringify(u.username)})'>
+              Reset Pwd
+            </button>
             ${!isMe ? `<button class="btn-delete"
-              onclick="deleteUser(${JSON.stringify(u.username)})">
+              onclick='deleteUser(${JSON.stringify(u.username)})'>
               Delete
             </button>` : ''}
           </td>
@@ -455,32 +485,29 @@
   // ── Modal helpers ──────────────────────────────────────────────────────────
   function openCreate() {
     editUsername = null;
-    document.getElementById('modal-title').textContent  = 'New User';
-    document.getElementById('form-submit').textContent  = 'Create User';
-    document.getElementById('f-username').value         = '';
-    document.getElementById('f-username').disabled      = false;
-    document.getElementById('f-password').value         = '';
-    document.getElementById('f-password').placeholder   = 'Min. 6 characters';
-    document.getElementById('f-pass-hint').textContent  = '';
-    document.getElementById('f-role').value             = 'user';
-    document.getElementById('form-error').style.display = 'none';
+    document.getElementById('modal-title').textContent   = 'New User';
+    document.getElementById('form-submit').textContent   = 'Create User';
+    document.getElementById('f-username').value          = '';
+    document.getElementById('f-username').disabled       = false;
+    document.getElementById('f-password').value          = '';
+    document.getElementById('f-pass-group').style.display = '';
+    document.getElementById('f-role').value              = 'user';
+    document.getElementById('form-error').style.display  = 'none';
     document.getElementById('modal-overlay').classList.add('open');
     setTimeout(() => document.getElementById('f-username').focus(), 50);
   }
 
   function openEdit(username, role) {
     editUsername = username;
-    document.getElementById('modal-title').textContent  = `Edit: ${username}`;
-    document.getElementById('form-submit').textContent  = 'Save Changes';
-    document.getElementById('f-username').value         = username;
-    document.getElementById('f-username').disabled      = true;
-    document.getElementById('f-password').value         = '';
-    document.getElementById('f-password').placeholder   = 'Leave blank to keep current';
-    document.getElementById('f-pass-hint').textContent  = 'Leave blank to keep the current password.';
-    document.getElementById('f-role').value             = role;
-    document.getElementById('form-error').style.display = 'none';
+    document.getElementById('modal-title').textContent   = `Edit: ${username}`;
+    document.getElementById('form-submit').textContent   = 'Save Changes';
+    document.getElementById('f-username').value          = username;
+    document.getElementById('f-username').disabled       = true;
+    document.getElementById('f-pass-group').style.display = 'none';
+    document.getElementById('f-role').value              = role;
+    document.getElementById('form-error').style.display  = 'none';
     document.getElementById('modal-overlay').classList.add('open');
-    setTimeout(() => document.getElementById('f-password').focus(), 50);
+    setTimeout(() => document.getElementById('f-role').focus(), 50);
   }
 
   function closeModal() {
@@ -494,15 +521,15 @@
 
   // Close on Escape
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeModal();
+    if (e.key === 'Escape') { closeModal(); closeResetModal(); }
   });
 
   // ── Form submit ────────────────────────────────────────────────────────────
   async function submitForm() {
-    const username = document.getElementById('f-username').value.trim();
-    const password = document.getElementById('f-password').value;
-    const role     = document.getElementById('f-role').value;
-    const errorEl  = document.getElementById('form-error');
+    const username  = document.getElementById('f-username').value.trim();
+    const password  = editUsername ? null : document.getElementById('f-password').value;
+    const role      = document.getElementById('f-role').value;
+    const errorEl   = document.getElementById('form-error');
     const submitBtn = document.getElementById('form-submit');
 
     errorEl.style.display = 'none';
@@ -518,11 +545,6 @@
       errorEl.style.display = 'block';
       return;
     }
-    if (editUsername && password && password.length < 6) {
-      errorEl.textContent = 'New password must be at least 6 characters.';
-      errorEl.style.display = 'block';
-      return;
-    }
 
     submitBtn.disabled    = true;
     submitBtn.textContent = 'Saving…';
@@ -533,7 +555,7 @@
         res = await apiFetch(`/api/admin/users/${encodeURIComponent(editUsername)}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ password: password || undefined, role }),
+          body: JSON.stringify({ role }),
         });
       } else {
         res = await apiFetch('/api/admin/users', {
@@ -573,6 +595,72 @@
     } else {
       const data = await res.json();
       showAlert(data.error || 'Failed to delete user.', 'error');
+    }
+  }
+
+  // ── Reset Password Modal ──────────────────────────────────────────────────
+  let resetUsername = null;
+
+  function openResetPass(username) {
+    resetUsername = username;
+    document.getElementById('rp-modal-title').textContent = `Reset Password: ${username}`;
+    document.getElementById('rp-new').value               = '';
+    document.getElementById('rp-confirm').value           = '';
+    document.getElementById('rp-error').style.display     = 'none';
+    document.getElementById('rp-modal-overlay').classList.add('open');
+    setTimeout(() => document.getElementById('rp-new').focus(), 50);
+  }
+
+  function closeResetModal() {
+    document.getElementById('rp-modal-overlay').classList.remove('open');
+    resetUsername = null;
+  }
+
+  document.getElementById('rp-modal-overlay').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) closeResetModal();
+  });
+
+  async function submitResetPassword() {
+    const newPassword     = document.getElementById('rp-new').value;
+    const confirmPassword = document.getElementById('rp-confirm').value;
+    const errorEl         = document.getElementById('rp-error');
+    const submitBtn       = document.getElementById('rp-submit');
+
+    errorEl.style.display = 'none';
+
+    if (newPassword.length < 6) {
+      errorEl.textContent   = 'New password must be at least 6 characters.';
+      errorEl.style.display = 'block';
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      errorEl.textContent   = 'Passwords do not match.';
+      errorEl.style.display = 'block';
+      return;
+    }
+
+    submitBtn.disabled    = true;
+    submitBtn.textContent = 'Resetting…';
+
+    try {
+      const res = await apiFetch(`/api/admin/users/${encodeURIComponent(resetUsername)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: newPassword }),
+      });
+      if (!res) return;
+
+      if (res.ok) {
+        closeResetModal();
+        showAlert(`Password for "${resetUsername}" reset successfully.`);
+      } else {
+        const data = await res.json();
+        errorEl.textContent   = data.error || 'Failed to reset password.';
+        errorEl.style.display = 'block';
+      }
+    } finally {
+      submitBtn.disabled    = false;
+      submitBtn.textContent = 'Reset Password';
     }
   }
 

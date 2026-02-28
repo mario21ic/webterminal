@@ -86,6 +86,53 @@
     }
     .signout-btn:hover { background: #4a1c1c; color: #f85149; border-color: #f85149; }
 
+    .change-pass-btn {
+      background: transparent;
+      color: #8b949e;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 5px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+    .change-pass-btn:hover { background: #1c2c3b; color: #79c0ff; border-color: #388bfd; }
+
+    /* ── Change Password modal ────────────────────────────────────────────── */
+    .cp-form-group { display: flex; flex-direction: column; gap: 5px; }
+    .cp-form-group label {
+      font-size: 11px; font-weight: 600; color: #8b949e;
+      text-transform: uppercase; letter-spacing: .05em;
+    }
+    .cp-form-group input {
+      background: #0d1117; border: 1px solid #30363d; border-radius: 6px;
+      color: #e6edf3; font-size: 13px; padding: 8px 10px;
+      outline: none; transition: border-color .15s; width: 100%;
+    }
+    .cp-form-group input:focus { border-color: #58a6ff; }
+    .cp-form-error {
+      background: rgba(248,81,73,.1); border: 1px solid rgba(248,81,73,.35);
+      border-radius: 6px; color: #f85149; font-size: 12px;
+      padding: 8px 10px; display: none;
+    }
+    .modal-footer {
+      display: flex; justify-content: flex-end; gap: 8px;
+      padding: 14px 18px; border-top: 1px solid #30363d; flex-shrink: 0;
+    }
+    .btn-primary {
+      background: #238636; color: #fff; border: none; border-radius: 6px;
+      padding: 7px 14px; font-size: 13px; font-weight: 600;
+      cursor: pointer; transition: background .15s;
+    }
+    .btn-primary:hover:not(:disabled) { background: #2ea043; }
+    .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-secondary {
+      background: #21262d; color: #c9d1d9; border: 1px solid #30363d;
+      border-radius: 6px; padding: 7px 14px; font-size: 13px;
+      cursor: pointer; transition: background .15s;
+    }
+    .btn-secondary:hover { background: #30363d; }
+
     .admin-link {
       color: #d2a8ff;
       text-decoration: none;
@@ -581,6 +628,7 @@
       <div class="avatar" id="user-avatar">?</div>
       <span id="username-display">…</span>
     </div>
+    <button class="change-pass-btn" id="change-pass-btn">Change Password</button>
     <button class="signout-btn" id="signout-btn">Sign Out</button>
   </div>
 </header>
@@ -700,6 +748,39 @@
   </div>
 
 </main>
+
+<!-- ── Change Password modal ────────────────────────────────────────────── -->
+<div class="modal-backdrop hidden" id="cp-modal"
+     onclick="if(event.target===this)closeCpModal()">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-header">
+      <h3 style="font-family:inherit">Change Password</h3>
+      <button class="modal-close" onclick="closeCpModal()">✕</button>
+    </div>
+    <div class="modal-body" style="gap:12px">
+      <div class="cp-form-group">
+        <label>Current Password</label>
+        <input type="password" id="cp-current" autocomplete="current-password"
+               placeholder="Enter current password" />
+      </div>
+      <div class="cp-form-group">
+        <label>New Password</label>
+        <input type="password" id="cp-new" autocomplete="new-password"
+               placeholder="Min. 6 characters" />
+      </div>
+      <div class="cp-form-group">
+        <label>Confirm New Password</label>
+        <input type="password" id="cp-confirm" autocomplete="new-password"
+               placeholder="Repeat new password" />
+      </div>
+      <div class="cp-form-error" id="cp-error"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeCpModal()">Cancel</button>
+      <button class="btn-primary" id="cp-submit" onclick="submitChangePassword()">Update Password</button>
+    </div>
+  </div>
+</div>
 
 <!-- ── Container details modal ──────────────────────────────────────────── -->
 <div class="modal-backdrop hidden" id="container-modal"
@@ -956,9 +1037,9 @@
       </div>`;
   }
 
-  // Close modal on Escape key
+  // Close modals on Escape key
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') closeDetails();
+    if (e.key === 'Escape') { closeDetails(); closeCpModal(); }
   });
 
   // ── Container stop / remove actions ──────────────────────────────────────
@@ -1132,6 +1213,71 @@
       window.location.href = url;
     }
   }
+
+  // ── Change Password modal ─────────────────────────────────────────────────
+  function openCpModal() {
+    document.getElementById('cp-current').value       = '';
+    document.getElementById('cp-new').value           = '';
+    document.getElementById('cp-confirm').value       = '';
+    document.getElementById('cp-error').style.display = 'none';
+    document.getElementById('cp-modal').classList.remove('hidden');
+    setTimeout(() => document.getElementById('cp-current').focus(), 50);
+  }
+
+  function closeCpModal() {
+    document.getElementById('cp-modal').classList.add('hidden');
+  }
+
+  async function submitChangePassword() {
+    const currentPassword = document.getElementById('cp-current').value;
+    const newPassword     = document.getElementById('cp-new').value;
+    const confirmPassword = document.getElementById('cp-confirm').value;
+    const errorEl         = document.getElementById('cp-error');
+    const submitBtn       = document.getElementById('cp-submit');
+
+    errorEl.style.display = 'none';
+
+    if (!currentPassword) {
+      errorEl.textContent = 'Current password is required.';
+      errorEl.style.display = 'block';
+      return;
+    }
+    if (newPassword.length < 6) {
+      errorEl.textContent = 'New password must be at least 6 characters.';
+      errorEl.style.display = 'block';
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      errorEl.textContent = 'Passwords do not match.';
+      errorEl.style.display = 'block';
+      return;
+    }
+
+    submitBtn.disabled    = true;
+    submitBtn.textContent = 'Updating…';
+
+    try {
+      const res = await apiFetch('/api/me/password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      if (!res) return;
+
+      if (res.ok) {
+        closeCpModal();
+      } else {
+        const data = await res.json();
+        errorEl.textContent   = data.error || 'Failed to update password.';
+        errorEl.style.display = 'block';
+      }
+    } finally {
+      submitBtn.disabled    = false;
+      submitBtn.textContent = 'Update Password';
+    }
+  }
+
+  document.getElementById('change-pass-btn').addEventListener('click', openCpModal);
 
   // ── User info + sign out ──────────────────────────────────────────────────
   async function loadUser() {

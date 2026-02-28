@@ -192,6 +192,23 @@ app.delete('/api/admin/users/:username', requireAuthAPI, requireAdmin, (req, res
   res.json({ ok: true });
 });
 
+app.post('/api/me/password', requireAuthAPI, (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword) return res.status(400).json({ error: 'Current password is required' });
+  if (!newPassword || newPassword.length < 6) return res.status(400).json({ error: 'New password must be at least 6 characters' });
+
+  const { username } = req.session.user;
+  const user = stmts.findUser.get(username);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+
+  if (!bcrypt.compareSync(currentPassword, user.password_hash)) {
+    return res.status(401).json({ error: 'Current password is incorrect' });
+  }
+
+  stmts.updatePass.run(bcrypt.hashSync(newPassword, 10), username);
+  res.json({ ok: true });
+});
+
 // ── Docker API (user-scoped) ──────────────────────────────────────────────────
 app.get('/api/containers', requireAuthAPI, async (req, res) => {
   if (!docker) return res.json([]);
