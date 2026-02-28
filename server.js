@@ -11,6 +11,7 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const { execFile } = require('child_process');
 
 const PORT           = process.env.PORT           || 3000;
 const LOCAL_SHELL    = process.env.SHELL          || '/bin/bash';
@@ -588,6 +589,48 @@ app.get('/api/images', requireAuthAPI, async (req, res) => {
   }
 });
 
+app.get('/api/images/:tag(*)', requireAuthAPI, async (req, res) => {
+  if (!docker) return res.status(503).json({ error: 'Docker not available' });
+  const tag      = req.params.tag;
+  const username = req.session.user.username;
+  try {
+    // Verify the user can see this image
+    const images = await docker.listImages({ filters: JSON.stringify({ reference: [tag] }) });
+    if (images.length === 0) return res.status(404).json({ error: 'Image not found' });
+    const owner = (images[0].Labels || {})[LABEL_USER];
+    if (owner && owner !== username) return res.status(404).json({ error: 'Image not found' });
+
+    const image   = docker.getImage(tag);
+    const [info, history] = await Promise.all([image.inspect(), image.history()]);
+
+    const cfg = info.Config || {};
+    res.json({
+      id:           info.Id.replace('sha256:', '').slice(0, 12),
+      tags:         info.RepoTags  || [],
+      size:         info.Size,
+      created:      info.Created,
+      architecture: info.Architecture,
+      os:           info.Os,
+      author:       info.Author   || '—',
+      cmd:          cfg.Cmd       || [],
+      entrypoint:   cfg.Entrypoint || [],
+      env:          cfg.Env       || [],
+      expose:       Object.keys(cfg.ExposedPorts || {}),
+      workdir:      cfg.WorkingDir || '/',
+      user:         cfg.User      || 'root',
+      labels:       cfg.Labels    || {},
+      history:      history.map(h => ({
+        created:    h.Created,
+        createdBy:  (h.CreatedBy || '').replace(/^\/bin\/sh -c #\(nop\) /, '').replace(/^\/bin\/sh -c /, 'RUN ').trim(),
+        size:       h.Size,
+        empty:      h.Size === 0,
+      })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/containers/:id/commit', requireAuthAPI, async (req, res) => {
   if (!docker) return res.status(503).json({ error: 'Docker not available' });
   const { id } = req.params;
@@ -617,6 +660,66 @@ app.post('/api/containers/:id/commit', requireAuthAPI, async (req, res) => {
     if (err.statusCode === 409) return res.status(409).json({ error: 'Image name/tag already in use' });
     res.status(500).json({ error: err.message });
   }
+});
+
+app.post('/api/containers/run', requireAuthAPI, async (req, res) => {
+  if (!docker) return res.status(503).json({ error: 'Docker not available' });
+  const { username } = req.session.user;
+  let { image, volume, network, mem = 512, cpu = 1, shell, cmd, user: userParam } = req.body;
+
+  if (!image?.trim()) return res.status(400).json({ error: 'Image is required' });
+
+  // Container limit check
+  try {
+    const dbUser   = stmts.findUser.get(username);
+    const existing = await docker.listContainers({
+      all: true, filters: { label: [`${LABEL_USER}=${username}`] },
+    });
+    if (existing.length >= dbUser.max_containers)
+      return res.status(429).json({ error: `Container limit reached (${dbUser.max_containers})` });
+  } catch (err) {
+    console.warn(`[${username}] could not check container limit: ${err.message}`);
+  }
+
+  // Auto-create default network
+  let networkName = network || null;
+  if (!networkName) {
+    const defaultNet = `netdefault-${username}`;
+    try {
+      const existing = await docker.listNetworks({ filters: JSON.stringify({ name: [defaultNet] }) });
+      if (existing.length === 0) {
+        await docker.createNetwork({
+          Name: defaultNet, Driver: 'bridge',
+          Labels: { [LABEL_USER]: username, 'webterminal': 'true' },
+        });
+      }
+      networkName = defaultNet;
+    } catch (err) {
+      console.warn(`[${username}] could not ensure default network: ${err.message}`);
+    }
+  }
+
+  mem = Math.max(64,  Math.min(8192, parseInt(mem,  10) || 512));
+  cpu = Math.max(0.1, Math.min(8,    parseFloat(cpu) || 1));
+
+  const args = ['run', '-d', '-w', '/data',
+    `--label=${LABEL_USER}=${username}`,
+    '--label=webterminal=true',
+    '--memory', `${mem}m`,
+    '--cpus',   String(cpu),
+    ...(userParam && userParam !== 'root' ? ['--user', userParam] : []),
+    ...(volume    ? ['-v', `${volume}:/data`]    : []),
+    ...(networkName ? ['--network', networkName] : []),
+    image.trim(),
+    ...(shell ? ['sh', '-c', cmd || 'command -v bash >/dev/null 2>&1 && exec bash || exec sh'] : []),
+  ];
+
+  console.log(`[${username}] run (bg) → ${image.trim()}`);
+
+  execFile('docker', args, (err, stdout) => {
+    if (err) return res.status(500).json({ error: err.message.split('\n')[0] });
+    res.status(201).json({ ok: true, id: stdout.trim().slice(0, 12) });
+  });
 });
 
 app.get('/api/containers/:id/logs', requireAuthAPI, async (req, res) => {
@@ -751,7 +854,8 @@ wss.on('connection', async (ws, req) => {
     const mem  = Math.max(64,  Math.min(8192, parseInt(url.searchParams.get('mem')  || '512', 10)));
     const cpu  = Math.max(0.1, Math.min(8,    parseFloat(url.searchParams.get('cpu') || '1')));
 
-    const shell    = url.searchParams.get('shell') === '1';
+    const shell     = url.searchParams.get('shell') === '1';
+    const cmdParam  = url.searchParams.get('cmd')  || null;
     const userParam = url.searchParams.get('user') || null; // 'root' | 'uid:gid' | null
 
     console.log(`[${username}] run → ${imageName}${volumeName ? ` +vol:${volumeName}` : ''}${networkName ? ` +net:${networkName}` : ''} mem:${mem}m cpu:${cpu} user:${userParam || 'default'} shell:${shell}`);
@@ -765,7 +869,7 @@ wss.on('connection', async (ws, req) => {
       ...(volumeName  ? ['-v', `${volumeName}:/data`]  : []),
       ...(networkName ? ['--network', networkName]      : []),
       imageName,
-      ...(shell ? ['sh', '-c', 'command -v bash >/dev/null 2>&1 && exec bash || exec sh'] : [])];
+      ...(shell ? ['sh', '-c', cmdParam || 'command -v bash >/dev/null 2>&1 && exec bash || exec sh'] : [])];
     opts = { name: 'xterm-color', cols: 80, rows: 24, env: process.env };
 
   } else {

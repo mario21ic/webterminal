@@ -714,6 +714,73 @@
     .uid-gid-input:focus { border-color: #d2a8ff; }
     .uid-gid-input:disabled { opacity: .4; cursor: not-allowed; }
     .uid-gid-label { font-size: 11px; color: #484f58; }
+    .override-cmd-row { flex-direction: column; align-items: flex-start; gap: 5px; }
+    .override-cmd-input {
+      width: 100%;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      color: #c9d1d9;
+      font-size: 12px;
+      font-family: 'Cascadia Code','Fira Code','JetBrains Mono',monospace;
+      padding: 4px 8px;
+      outline: none;
+      transition: border-color .15s;
+    }
+    .override-cmd-input:focus { border-color: #d2a8ff; }
+    .override-cmd-input:disabled { opacity: .4; cursor: not-allowed; }
+
+    /* ── Toast notification ───────────────────────────────────────────────── */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(12px);
+      background: #21262d;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      color: #e6edf3;
+      font-size: 13px;
+      padding: 10px 18px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.5);
+      opacity: 0;
+      transition: opacity .2s, transform .2s;
+      pointer-events: none;
+      z-index: 999;
+      white-space: nowrap;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .toast.success { border-color: #3fb950; color: #56d364; }
+    .toast.error   { border-color: #f85149; color: #f85149; }
+
+    /* ── Image history table ──────────────────────────────────────────────── */
+    .history-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+    }
+    .history-table th {
+      text-align: left;
+      color: #8b949e;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      padding: 4px 6px;
+      border-bottom: 1px solid #30363d;
+    }
+    .history-table td {
+      padding: 4px 6px;
+      border-bottom: 1px solid #21262d;
+      vertical-align: top;
+      color: #c9d1d9;
+    }
+    .history-table tr:last-child td { border-bottom: none; }
+    .history-table tr.empty-layer td { color: #484f58; }
+    .history-cmd {
+      font-family: 'Cascadia Code','Fira Code','JetBrains Mono',monospace;
+      word-break: break-all;
+      max-width: 360px;
+    }
 
     /* ── Launch buttons ───────────────────────────────────────────────────── */
     .launch-btn {
@@ -839,6 +906,10 @@
       </div>
     </div>
     <div class="checkbox-row">
+      <input type="checkbox" id="bg-check" onchange="onBgCheck()" />
+      <label for="bg-check">Run in background</label>
+    </div>
+    <div class="checkbox-row">
       <input type="checkbox" id="shell-check" onchange="onShellCheck()" />
       <label for="shell-check">Run Shell</label>
     </div>
@@ -853,6 +924,15 @@
     <div class="checkbox-row">
       <input type="checkbox" id="root-check" disabled onchange="onRootCheck()" />
       <label for="root-check">Run as root</label>
+    </div>
+    <div class="checkbox-row override-cmd-row">
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="override-cmd-check" disabled onchange="onOverrideCmdCheck()" />
+        <label for="override-cmd-check">Override command</label>
+      </div>
+      <input type="text" id="override-cmd-input" class="override-cmd-input"
+        value="command -v bash >/dev/null 2>&1 &amp;&amp; exec bash || exec sh"
+        disabled />
     </div>
     <button class="launch-btn" id="image-btn" disabled onclick="go('image')">
       Launch Container →
@@ -980,6 +1060,19 @@
   </div>
 </div>
 
+<!-- ── Image details modal ───────────────────────────────────────────────── -->
+<div class="modal-backdrop hidden" id="image-modal"
+     onclick="if(event.target===this)closeImageDetails()">
+  <div class="modal" style="max-width:620px">
+    <div class="modal-header">
+      <span style="font-size:15px">🐳</span>
+      <h3 id="image-modal-title">Image Details</h3>
+      <button class="modal-close" onclick="closeImageDetails()">✕</button>
+    </div>
+    <div class="modal-body" id="image-modal-body"></div>
+  </div>
+</div>
+
 <!-- ── Logs modal ────────────────────────────────────────────────────────── -->
 <div class="modal-backdrop hidden" id="logs-modal"
      onclick="if(event.target===this)closeLogs()">
@@ -1008,6 +1101,8 @@
     <div class="modal-body" id="modal-body"></div>
   </div>
 </div>
+
+<div class="toast" id="toast"></div>
 
 <script>
   let selectedContainer        = null;
@@ -1145,13 +1240,19 @@
     listEl.innerHTML = images.map(img => `
       <div class="list-item" data-value="${img.tag}"
            data-search="${img.tag.toLowerCase()}">
-        <div class="item-name">${img.tag}</div>
-        ${img.size ? `<div class="item-meta">${formatSize(img.size)}</div>` : ''}
+        <div class="item-row">
+          <div class="item-content">
+            <div class="item-name">${img.tag}</div>
+            ${img.size ? `<div class="item-meta">${formatSize(img.size)}</div>` : ''}
+          </div>
+          <button class="item-info" title="Image details"
+            onclick="showImageDetails(event,'${img.tag.replace(/'/g, "\\'")}')">ⓘ</button>
+        </div>
       </div>
     `).join('');
 
     listEl.querySelectorAll('.list-item').forEach(el => {
-      el.addEventListener('click', () => {
+      el.querySelector('.item-content').addEventListener('click', () => {
         listEl.querySelectorAll('.list-item').forEach(i => i.classList.remove('selected'));
         el.classList.add('selected');
         selectedImage = el.dataset.value;
@@ -1160,7 +1261,7 @@
     });
 
     // Auto-select first
-    const first = listEl.querySelector('.list-item');
+    const first = listEl.querySelector('.item-content');
     if (first) first.click();
   }
 
@@ -1280,7 +1381,7 @@
 
   // Close modals on Escape key
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { closeDetails(); closeCpModal(); closeCommitModal(); closeLogs(); closeVolumeDetails(); closeNetworkDetails(); }
+    if (e.key === 'Escape') { closeDetails(); closeCpModal(); closeCommitModal(); closeLogs(); closeVolumeDetails(); closeNetworkDetails(); closeImageDetails(); }
   });
 
   // ── Container stop / remove actions ──────────────────────────────────────
@@ -1572,19 +1673,131 @@
       </div>`;
   }
 
+  // ── Toast ─────────────────────────────────────────────────────────────────
+  let toastTimer = null;
+  function showToast(msg, type = 'success') {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.className = `toast ${type} show`;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
+  }
+
+  // ── Image details modal ───────────────────────────────────────────────────
+  function closeImageDetails() {
+    document.getElementById('image-modal').classList.add('hidden');
+  }
+
+  async function showImageDetails(event, tag) {
+    event.stopPropagation();
+    const modal = document.getElementById('image-modal');
+    const body  = document.getElementById('image-modal-body');
+    document.getElementById('image-modal-title').textContent = tag;
+    body.innerHTML = '<div style="color:#484f58;text-align:center;padding:32px 0">Loading…</div>';
+    modal.classList.remove('hidden');
+
+    const res = await apiFetch(`/api/images/${encodeURIComponent(tag)}`);
+    if (!res) return;
+    const d = await res.json();
+    if (d.error) { body.innerHTML = `<div style="color:#f85149;padding:8px">${d.error}</div>`; return; }
+
+    const fmt     = iso => iso ? new Date(iso).toLocaleString() : '—';
+    const fmtSize = bytes => {
+      if (!bytes || bytes < 0) return '—';
+      if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(2)} GB`;
+      if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(1)} MB`;
+      if (bytes >= 1e3) return `${(bytes / 1e3).toFixed(1)} KB`;
+      return `${bytes} B`;
+    };
+    const escHtml = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+    const listOrEmpty = (arr, mono = false) =>
+      arr.length === 0 ? '<span class="detail-empty">none</span>'
+        : arr.map(v => `<div class="${mono ? 'item-name' : ''}" style="${mono ? 'font-size:11px' : ''}">${escHtml(String(v))}</div>`).join('');
+
+    const labelsHtml = Object.entries(d.labels).length === 0
+      ? '<span class="detail-empty">none</span>'
+      : `<table class="detail-table">${Object.entries(d.labels).map(([k,v]) =>
+          `<tr><td>${escHtml(k)}</td><td style="word-break:break-all">${escHtml(v)}</td></tr>`).join('')}</table>`;
+
+    const historyHtml = `
+      <table class="history-table">
+        <thead><tr><th>Command</th><th>Size</th><th>Date</th></tr></thead>
+        <tbody>
+          ${d.history.map(h => `
+            <tr class="${h.empty ? 'empty-layer' : ''}">
+              <td class="history-cmd">${escHtml(h.createdBy || '—')}</td>
+              <td style="white-space:nowrap">${fmtSize(h.size)}</td>
+              <td style="white-space:nowrap;color:#8b949e">${h.created ? new Date(h.created * 1000).toLocaleDateString() : '—'}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>`;
+
+    body.innerHTML = `
+      <div class="detail-section">
+        <h4>General</h4>
+        <table class="detail-table">
+          <tr><td>ID</td>           <td>${d.id}</td></tr>
+          <tr><td>Size</td>         <td>${fmtSize(d.size)}</td></tr>
+          <tr><td>Architecture</td> <td>${d.architecture} / ${d.os}</td></tr>
+          <tr><td>Author</td>       <td>${escHtml(d.author)}</td></tr>
+          <tr><td>Created</td>      <td>${fmt(d.created)}</td></tr>
+          <tr><td>Working Dir</td>  <td style="font-family:monospace">${escHtml(d.workdir)}</td></tr>
+          <tr><td>User</td>         <td>${escHtml(d.user)}</td></tr>
+        </table>
+      </div>
+      <div class="detail-section">
+        <h4>CMD</h4>${listOrEmpty(d.cmd, true)}
+      </div>
+      <div class="detail-section">
+        <h4>Entrypoint</h4>${listOrEmpty(d.entrypoint, true)}
+      </div>
+      <div class="detail-section">
+        <h4>Exposed Ports</h4>${listOrEmpty(d.expose)}
+      </div>
+      <div class="detail-section">
+        <h4>Environment</h4>${listOrEmpty(d.env, true)}
+      </div>
+      <div class="detail-section">
+        <h4>Labels</h4>${labelsHtml}
+      </div>
+      <div class="detail-section">
+        <h4>History</h4>${historyHtml}
+      </div>`;
+  }
+
   // ── Image card checkbox interactions ─────────────────────────────────────
-  function onShellCheck() {
-    const shell   = document.getElementById('shell-check').checked;
-    const runUser = document.getElementById('run-user-check');
-    const rootChk = document.getElementById('root-check');
-    runUser.disabled = !shell;
-    rootChk.disabled = !shell;
-    if (!shell) {
-      runUser.checked = false;
-      rootChk.checked = false;
-      document.getElementById('uid-input').disabled = true;
-      document.getElementById('gid-input').disabled = true;
+  function onBgCheck() {
+    const bg = document.getElementById('bg-check').checked;
+    document.getElementById('shell-check').disabled = bg;
+    if (bg) {
+      document.getElementById('shell-check').checked = false;
+      onShellCheck();
     }
+  }
+
+  function onShellCheck() {
+    const shell       = document.getElementById('shell-check').checked;
+    const runUser     = document.getElementById('run-user-check');
+    const rootChk     = document.getElementById('root-check');
+    const overrideChk = document.getElementById('override-cmd-check');
+    runUser.disabled     = !shell;
+    rootChk.disabled     = !shell;
+    overrideChk.disabled = !shell;
+    if (!shell) {
+      runUser.checked     = false;
+      rootChk.checked     = false;
+      overrideChk.checked = false;
+      document.getElementById('uid-input').disabled          = true;
+      document.getElementById('gid-input').disabled          = true;
+      document.getElementById('override-cmd-input').disabled = true;
+    }
+  }
+
+  function onOverrideCmdCheck() {
+    const checked = document.getElementById('override-cmd-check').checked;
+    document.getElementById('override-cmd-input').disabled = !checked;
+    if (checked) document.getElementById('override-cmd-input').focus();
   }
 
   function onRunUserCheck() {
@@ -1603,7 +1816,7 @@
   }
 
   // ── Navigation ────────────────────────────────────────────────────────────
-  function go(type) {
+  async function go(type) {
     if (type === 'local') {
       window.location.href = '/terminal.html';
     } else if (type === 'container' && selectedContainer && selectedContainerRunning) {
@@ -1612,23 +1825,47 @@
       if (root) url += '&root=1';
       window.open(url, '_blank');
     } else if (type === 'image' && selectedImage) {
-      const vol     = document.getElementById('vol-select').value;
-      const net     = document.getElementById('net-select').value;
-      const mem     = document.getElementById('mem-input').value || '512';
-      const cpu     = document.getElementById('cpu-input').value || '1';
-      const shell   = document.getElementById('shell-check').checked;
-      const root    = document.getElementById('root-check').checked;
-      const runUser = document.getElementById('run-user-check').checked;
-      const uid     = document.getElementById('uid-input').value || '1000';
-      const gid     = document.getElementById('gid-input').value || '1000';
-      let url = `/terminal.html?image=${encodeURIComponent(selectedImage)}`;
-      if (vol)   url += `&volume=${encodeURIComponent(vol)}`;
-      if (net)   url += `&network=${encodeURIComponent(net)}`;
-      url += `&mem=${encodeURIComponent(mem)}&cpu=${encodeURIComponent(cpu)}`;
-      if (shell) url += '&shell=1';
-      if (root)        url += '&user=root';
-      else if (runUser) url += `&user=${encodeURIComponent(uid + ':' + gid)}`;
-      window.open(url, '_blank');
+      const vol      = document.getElementById('vol-select').value;
+      const net      = document.getElementById('net-select').value;
+      const mem      = document.getElementById('mem-input').value || '512';
+      const cpu      = document.getElementById('cpu-input').value || '1';
+      const bg       = document.getElementById('bg-check').checked;
+      const shell    = document.getElementById('shell-check').checked;
+      const root     = document.getElementById('root-check').checked;
+      const runUser  = document.getElementById('run-user-check').checked;
+      const uid      = document.getElementById('uid-input').value || '1000';
+      const gid      = document.getElementById('gid-input').value || '1000';
+      const override = document.getElementById('override-cmd-check').checked;
+      const cmdVal   = document.getElementById('override-cmd-input').value.trim();
+
+      const userParam = root ? 'root' : (runUser ? `${uid}:${gid}` : null);
+
+      if (bg) {
+        const body = { image: selectedImage, mem, cpu };
+        if (vol)                    body.volume  = vol;
+        if (net)                    body.network = net;
+        if (shell)                  body.shell   = true;
+        if (override && cmdVal)     body.cmd     = cmdVal;
+        if (userParam)              body.user    = userParam;
+        const res = await apiFetch('/api/containers/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!res) return;
+        const d = await res.json();
+        if (res.ok) { showToast(`Started: ${d.id}`, 'success'); loadContainersAuth(); }
+        else showToast(d.error || 'Failed to start container', 'error');
+      } else {
+        let url = `/terminal.html?image=${encodeURIComponent(selectedImage)}`;
+        if (vol)   url += `&volume=${encodeURIComponent(vol)}`;
+        if (net)   url += `&network=${encodeURIComponent(net)}`;
+        url += `&mem=${encodeURIComponent(mem)}&cpu=${encodeURIComponent(cpu)}`;
+        if (shell)          url += '&shell=1';
+        if (override && cmdVal) url += `&cmd=${encodeURIComponent(cmdVal)}`;
+        if (userParam)      url += `&user=${encodeURIComponent(userParam)}`;
+        window.open(url, '_blank');
+      }
     }
   }
 
