@@ -345,6 +345,22 @@
     }
     .item-commit:hover { color: #d2a8ff; background: rgba(210,168,255,.1); border-color: rgba(210,168,255,.3); }
 
+    .item-log {
+      background: transparent;
+      border: 1px solid transparent;
+      color: #484f58;
+      cursor: pointer;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 500;
+      line-height: 1.4;
+      flex-shrink: 0;
+      white-space: nowrap;
+      transition: color .15s, background .15s, border-color .15s;
+    }
+    .item-log:hover { color: #e3b341; background: rgba(227,179,65,.1); border-color: rgba(227,179,65,.3); }
+
     /* ── New volume / network buttons ────────────────────────────────────── */
     .new-vol-btn {
       margin-left: auto;
@@ -494,6 +510,35 @@
       flex-shrink: 0;
     }
     .modal-close:hover { color: #e6edf3; background: #21262d; }
+
+    .modal-refresh {
+      background: transparent;
+      border: none;
+      color: #8b949e;
+      cursor: pointer;
+      font-size: 17px;
+      line-height: 1;
+      padding: 2px 6px;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+    .modal-refresh:hover { color: #e6edf3; background: #21262d; }
+
+    .logs-pre {
+      margin: 0;
+      padding: 14px 16px;
+      background: #0d1117;
+      color: #c9d1d9;
+      font-family: 'Cascadia Code','Fira Code','JetBrains Mono',Menlo,Monaco,monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-all;
+      overflow-y: auto;
+      max-height: calc(82vh - 52px);
+      scrollbar-width: thin;
+      scrollbar-color: #30363d transparent;
+    }
 
     .modal-body {
       overflow-y: auto;
@@ -875,6 +920,22 @@
   </div>
 </div>
 
+<!-- ── Logs modal ────────────────────────────────────────────────────────── -->
+<div class="modal-backdrop hidden" id="logs-modal"
+     onclick="if(event.target===this)closeLogs()">
+  <div class="modal" style="max-width:680px">
+    <div class="modal-header">
+      <span style="font-size:15px">📋</span>
+      <h3 id="logs-modal-title">Logs</h3>
+      <button class="modal-refresh" onclick="loadLogs()" title="Refresh">↺</button>
+      <button class="modal-close" onclick="closeLogs()">✕</button>
+    </div>
+    <div class="modal-body" style="padding:0">
+      <pre id="logs-output" class="logs-pre">Loading…</pre>
+    </div>
+  </div>
+</div>
+
 <!-- ── Container details modal ──────────────────────────────────────────── -->
 <div class="modal-backdrop hidden" id="container-modal"
      onclick="if(event.target===this)closeDetails()">
@@ -953,6 +1014,8 @@
           <button class="item-info" title="Container details"
             onclick="showContainerDetails(event,'${c.id}')">ⓘ</button>
           ${running ? `
+            <button class="item-log" title="View container logs"
+              onclick="viewLogs(event,'${c.id}','${c.name}')">≡ Log</button>
             <button class="item-commit" title="Create image from this container"
               onclick="openCommitModal(event,'${c.id}')">⬆ Image</button>
             <button class="item-stop"  title="Stop container"
@@ -1157,7 +1220,7 @@
 
   // Close modals on Escape key
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { closeDetails(); closeCpModal(); closeCommitModal(); }
+    if (e.key === 'Escape') { closeDetails(); closeCpModal(); closeCommitModal(); closeLogs(); }
   });
 
   // ── Container stop / remove actions ──────────────────────────────────────
@@ -1335,6 +1398,35 @@
       if (root) url += '&root=1';
       window.location.href = url;
     }
+  }
+
+  // ── Logs modal ────────────────────────────────────────────────────────────
+  let logsContainerId = null;
+
+  function closeLogs() {
+    document.getElementById('logs-modal').classList.add('hidden');
+    logsContainerId = null;
+  }
+
+  async function loadLogs() {
+    if (!logsContainerId) return;
+    const pre = document.getElementById('logs-output');
+    pre.textContent = 'Loading…';
+    const res = await apiFetch(`/api/containers/${encodeURIComponent(logsContainerId)}/logs`);
+    if (!res) return;
+    if (!res.ok) { const d = await res.json(); pre.textContent = d.error || 'Error'; return; }
+    const text = await res.text();
+    pre.textContent = text || '(no output)';
+    pre.scrollTop = pre.scrollHeight;
+  }
+
+  async function viewLogs(event, id, name) {
+    event.stopPropagation();
+    logsContainerId = id;
+    document.getElementById('logs-modal-title').textContent = name;
+    document.getElementById('logs-output').textContent = 'Loading…';
+    document.getElementById('logs-modal').classList.remove('hidden');
+    await loadLogs();
   }
 
   // ── Create Image (commit) modal ───────────────────────────────────────────

@@ -544,6 +544,32 @@ app.post('/api/containers/:id/commit', requireAuthAPI, async (req, res) => {
   }
 });
 
+app.get('/api/containers/:id/logs', requireAuthAPI, async (req, res) => {
+  if (!docker) return res.status(503).json({ error: 'Docker not available' });
+  const { id } = req.params;
+  const tail = Math.min(500, Math.max(1, parseInt(req.query.tail || '200', 10)));
+  const { username } = req.session.user;
+  try {
+    const owned = await docker.listContainers({
+      all: true,
+      filters: { id: [id], label: [`${LABEL_USER}=${username}`] },
+    });
+    if (owned.length === 0)
+      return res.status(404).json({ error: 'Container not found or not yours' });
+
+    const buf = await docker.getContainer(id).logs({
+      stdout: true, stderr: true, follow: false, tail,
+    });
+    // Strip ANSI escape codes and Docker multiplexing headers
+    const text = buf.toString('utf8')
+      .replace(/[\x00-\x08\x0e-\x1a\x1c-\x1f]/g, '')   // control chars (keep \n \r \t)
+      .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');            // ANSI CSI sequences
+    res.type('text/plain').send(text);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── WebSocket ─────────────────────────────────────────────────────────────────
 function parseSession(req) {
   return new Promise(resolve => {

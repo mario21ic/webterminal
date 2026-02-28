@@ -15,9 +15,18 @@
 - Reset password with email
 - Monitor docker containers.
 - Add a section to set environments vars, then add them into containers
-- Add a button to see logs on realtime
+- Add a button to see logs on realtime (every 5seg while the modal is opened) ✅
 - Add widget to open ports before to launch container
-- Audit module: log all events into a file to see on admin panel
+- Audit module: log all events like run, exec, network, volume, etc  into a file to see on admin panel. Also log all commands
+- Quota: set max ram and cpu per container
 - Quota: set max containers per user ✅
 - Quota: set max networks per user 
 - Quota: set max volumes size per user 
+- Descargar una imagen mediante export .tar
+- Subir / descargar archivos
+- Integrate with ngrok / other to publish to internet
+
+- Bug cuando montas /data siempre es con root y no user 1000
+- Bug usuario crea con el mismo nombre no avisa, debe ser prefijo <username>/
+- Bug cuando crea debe quedar un loading o porcentaje avance
+- RUn a container without a shell, just command by default like nginx
