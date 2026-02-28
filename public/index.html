@@ -692,6 +692,28 @@
     .checkbox-row input[type="checkbox"]:not(:checked) + label {
       color: #6e7681;
     }
+    .checkbox-row input[type="checkbox"]:disabled + label {
+      color: #484f58;
+      cursor: not-allowed;
+    }
+    .checkbox-row input[type="checkbox"]:disabled {
+      cursor: not-allowed;
+      opacity: .45;
+    }
+    .uid-gid-input {
+      width: 58px;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      color: #c9d1d9;
+      font-size: 12px;
+      padding: 2px 6px;
+      outline: none;
+      transition: border-color .15s;
+    }
+    .uid-gid-input:focus { border-color: #d2a8ff; }
+    .uid-gid-input:disabled { opacity: .4; cursor: not-allowed; }
+    .uid-gid-label { font-size: 11px; color: #484f58; }
 
     /* ── Launch buttons ───────────────────────────────────────────────────── */
     .launch-btn {
@@ -817,7 +839,19 @@
       </div>
     </div>
     <div class="checkbox-row">
-      <input type="checkbox" id="root-check" />
+      <input type="checkbox" id="shell-check" onchange="onShellCheck()" />
+      <label for="shell-check">Run Shell</label>
+    </div>
+    <div class="checkbox-row">
+      <input type="checkbox" id="run-user-check" disabled onchange="onRunUserCheck()" />
+      <label for="run-user-check">Run as user</label>
+      <span class="uid-gid-label">UID</span>
+      <input type="number" id="uid-input" class="uid-gid-input" value="1000" min="0" disabled />
+      <span class="uid-gid-label">GID</span>
+      <input type="number" id="gid-input" class="uid-gid-input" value="1000" min="0" disabled />
+    </div>
+    <div class="checkbox-row">
+      <input type="checkbox" id="root-check" disabled onchange="onRootCheck()" />
       <label for="root-check">Run as root</label>
     </div>
     <button class="launch-btn" id="image-btn" disabled onclick="go('image')">
@@ -1538,6 +1572,36 @@
       </div>`;
   }
 
+  // ── Image card checkbox interactions ─────────────────────────────────────
+  function onShellCheck() {
+    const shell   = document.getElementById('shell-check').checked;
+    const runUser = document.getElementById('run-user-check');
+    const rootChk = document.getElementById('root-check');
+    runUser.disabled = !shell;
+    rootChk.disabled = !shell;
+    if (!shell) {
+      runUser.checked = false;
+      rootChk.checked = false;
+      document.getElementById('uid-input').disabled = true;
+      document.getElementById('gid-input').disabled = true;
+    }
+  }
+
+  function onRunUserCheck() {
+    const checked = document.getElementById('run-user-check').checked;
+    if (checked) document.getElementById('root-check').checked = false;
+    document.getElementById('uid-input').disabled = !checked;
+    document.getElementById('gid-input').disabled = !checked;
+  }
+
+  function onRootCheck() {
+    if (document.getElementById('root-check').checked) {
+      document.getElementById('run-user-check').checked = false;
+      document.getElementById('uid-input').disabled = true;
+      document.getElementById('gid-input').disabled = true;
+    }
+  }
+
   // ── Navigation ────────────────────────────────────────────────────────────
   function go(type) {
     if (type === 'local') {
@@ -1548,16 +1612,22 @@
       if (root) url += '&root=1';
       window.open(url, '_blank');
     } else if (type === 'image' && selectedImage) {
-      const vol  = document.getElementById('vol-select').value;
-      const net  = document.getElementById('net-select').value;
-      const mem  = document.getElementById('mem-input').value || '512';
-      const cpu  = document.getElementById('cpu-input').value || '1';
-      const root = document.getElementById('root-check').checked;
+      const vol     = document.getElementById('vol-select').value;
+      const net     = document.getElementById('net-select').value;
+      const mem     = document.getElementById('mem-input').value || '512';
+      const cpu     = document.getElementById('cpu-input').value || '1';
+      const shell   = document.getElementById('shell-check').checked;
+      const root    = document.getElementById('root-check').checked;
+      const runUser = document.getElementById('run-user-check').checked;
+      const uid     = document.getElementById('uid-input').value || '1000';
+      const gid     = document.getElementById('gid-input').value || '1000';
       let url = `/terminal.html?image=${encodeURIComponent(selectedImage)}`;
-      if (vol)  url += `&volume=${encodeURIComponent(vol)}`;
-      if (net)  url += `&network=${encodeURIComponent(net)}`;
+      if (vol)   url += `&volume=${encodeURIComponent(vol)}`;
+      if (net)   url += `&network=${encodeURIComponent(net)}`;
       url += `&mem=${encodeURIComponent(mem)}&cpu=${encodeURIComponent(cpu)}`;
-      if (root) url += '&root=1';
+      if (shell) url += '&shell=1';
+      if (root)        url += '&user=root';
+      else if (runUser) url += `&user=${encodeURIComponent(uid + ':' + gid)}`;
       window.open(url, '_blank');
     }
   }

@@ -751,18 +751,21 @@ wss.on('connection', async (ws, req) => {
     const mem  = Math.max(64,  Math.min(8192, parseInt(url.searchParams.get('mem')  || '512', 10)));
     const cpu  = Math.max(0.1, Math.min(8,    parseFloat(url.searchParams.get('cpu') || '1')));
 
-    console.log(`[${username}] run → ${imageName}${volumeName ? ` +vol:${volumeName}` : ''}${networkName ? ` +net:${networkName}` : ''} mem:${mem}m cpu:${cpu} root:${root}`);
+    const shell    = url.searchParams.get('shell') === '1';
+    const userParam = url.searchParams.get('user') || null; // 'root' | 'uid:gid' | null
+
+    console.log(`[${username}] run → ${imageName}${volumeName ? ` +vol:${volumeName}` : ''}${networkName ? ` +net:${networkName}` : ''} mem:${mem}m cpu:${cpu} user:${userParam || 'default'} shell:${shell}`);
     cmd  = 'docker';
     args = ['run', '-it', '-w', '/data',
       `--label=${LABEL_USER}=${username}`,
       '--label=webterminal=true',
       '--memory', `${mem}m`,
       '--cpus',   String(cpu),
-      ...(!root ? ['--user', '1000:1000'] : []),
+      ...(userParam && userParam !== 'root' ? ['--user', userParam] : []),
       ...(volumeName  ? ['-v', `${volumeName}:/data`]  : []),
       ...(networkName ? ['--network', networkName]      : []),
-      imageName, 'sh', '-c',
-      'command -v bash >/dev/null 2>&1 && exec bash || exec sh'];
+      imageName,
+      ...(shell ? ['sh', '-c', 'command -v bash >/dev/null 2>&1 && exec bash || exec sh'] : [])];
     opts = { name: 'xterm-color', cols: 80, rows: 24, env: process.env };
 
   } else {

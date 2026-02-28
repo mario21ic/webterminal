@@ -35,4 +35,7 @@
 - Details of volume ✅
 - Details of network ✅
 - Always run the attach command unless the run as root checkbox is checked ✅
+- Add Run Shell, otherwise commands from Dockerfile ✅
 - Add override commands using shell
+- Add a modal to view docker image details
+- Launch Container in background mode
