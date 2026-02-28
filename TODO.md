@@ -32,7 +32,7 @@
 - Run a container without a shell, just command by default like nginx: nginx -g 'daemon off;'
 - Session storage on third party
 
-- Details of volume
-- Details of network
-- Always run the attach command unless the run as root checkbox is checked.
+- Details of volume ✅
+- Details of network ✅
+- Always run the attach command unless the run as root checkbox is checked ✅
 

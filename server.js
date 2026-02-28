@@ -432,6 +432,31 @@ app.delete('/api/volumes/:name', requireAuthAPI, async (req, res) => {
   }
 });
 
+app.get('/api/volumes/:name', requireAuthAPI, async (req, res) => {
+  if (!docker) return res.status(503).json({ error: 'Docker not available' });
+  const { name } = req.params;
+  const { username } = req.session.user;
+  try {
+    const vol = await docker.getVolume(name).inspect();
+    if (vol.Labels?.[LABEL_USER] !== username)
+      return res.status(404).json({ error: 'Volume not found or not yours' });
+    res.json({
+      name:       vol.Name,
+      driver:     vol.Driver,
+      scope:      vol.Scope,
+      mountpoint: vol.Mountpoint,
+      created:    vol.CreatedAt,
+      options:    vol.Options  || {},
+      labels:     vol.Labels   || {},
+      size:       vol.UsageData?.Size ?? -1,
+      refcount:   vol.UsageData?.RefCount ?? -1,
+    });
+  } catch (err) {
+    if (err.statusCode === 404) return res.status(404).json({ error: 'Volume not found' });
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Network API (user-scoped) ─────────────────────────────────────────────
 app.get('/api/networks', requireAuthAPI, async (req, res) => {
   if (!docker) return res.json([]);
@@ -485,6 +510,43 @@ app.delete('/api/networks/:name', requireAuthAPI, async (req, res) => {
   } catch (err) {
     if (err.statusCode === 403) return res.status(403).json({ error: 'Cannot remove predefined network' });
     if (err.statusCode === 409) return res.status(409).json({ error: 'Network has active endpoints' });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/networks/:name', requireAuthAPI, async (req, res) => {
+  if (!docker) return res.status(503).json({ error: 'Docker not available' });
+  const { name } = req.params;
+  const { username } = req.session.user;
+  try {
+    const list = await docker.listNetworks({
+      filters: JSON.stringify({ label: [`${LABEL_USER}=${username}`], name: [name] }),
+    });
+    if (list.length === 0)
+      return res.status(404).json({ error: 'Network not found or not yours' });
+    const info = await docker.getNetwork(list[0].Id).inspect();
+    const ipam = (info.IPAM?.Config || []).map(c => ({
+      subnet:  c.Subnet  || '—',
+      gateway: c.Gateway || '—',
+    }));
+    const containers = Object.values(info.Containers || {}).map(c => ({
+      name: c.Name,
+      ipv4: c.IPv4Address || '—',
+      mac:  c.MacAddress  || '—',
+    }));
+    res.json({
+      id:         info.Id.slice(0, 12),
+      name:       info.Name,
+      driver:     info.Driver,
+      scope:      info.Scope,
+      internal:   info.Internal,
+      attachable: info.Attachable,
+      created:    info.Created,
+      ipam,
+      containers,
+      options:    info.Options || {},
+    });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
@@ -616,12 +678,16 @@ wss.on('connection', async (ws, req) => {
         }
       } catch { /* docker unavailable */ }
     }
-    console.log(`[${username}] exec → ${containerId} root:${root}`);
-    cmd  = 'docker';
-    args = ['exec', '-it',
-      ...(root ? ['-u', 'root'] : []),
-      containerId, 'sh', '-c',
-      'command -v bash >/dev/null 2>&1 && exec bash || exec sh'];
+    if (root) {
+      console.log(`[${username}] exec (root) → ${containerId}`);
+      cmd  = 'docker';
+      args = ['exec', '-it', '-u', 'root', containerId, 'sh', '-c',
+        'command -v bash >/dev/null 2>&1 && exec bash || exec sh'];
+    } else {
+      console.log(`[${username}] attach → ${containerId}`);
+      cmd  = 'docker';
+      args = ['attach', containerId];
+    }
     opts = { name: 'xterm-color', cols: 80, rows: 24, env: process.env };
 
   } else if (imageName) {

@@ -920,6 +920,32 @@
   </div>
 </div>
 
+<!-- ── Volume details modal ──────────────────────────────────────────────── -->
+<div class="modal-backdrop hidden" id="volume-modal"
+     onclick="if(event.target===this)closeVolumeDetails()">
+  <div class="modal">
+    <div class="modal-header">
+      <span style="font-size:15px">💾</span>
+      <h3 id="volume-modal-title">Volume Details</h3>
+      <button class="modal-close" onclick="closeVolumeDetails()">✕</button>
+    </div>
+    <div class="modal-body" id="volume-modal-body"></div>
+  </div>
+</div>
+
+<!-- ── Network details modal ─────────────────────────────────────────────── -->
+<div class="modal-backdrop hidden" id="network-modal"
+     onclick="if(event.target===this)closeNetworkDetails()">
+  <div class="modal">
+    <div class="modal-header">
+      <span style="font-size:15px">🌐</span>
+      <h3 id="network-modal-title">Network Details</h3>
+      <button class="modal-close" onclick="closeNetworkDetails()">✕</button>
+    </div>
+    <div class="modal-body" id="network-modal-body"></div>
+  </div>
+</div>
+
 <!-- ── Logs modal ────────────────────────────────────────────────────────── -->
 <div class="modal-backdrop hidden" id="logs-modal"
      onclick="if(event.target===this)closeLogs()">
@@ -1220,7 +1246,7 @@
 
   // Close modals on Escape key
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { closeDetails(); closeCpModal(); closeCommitModal(); closeLogs(); }
+    if (e.key === 'Escape') { closeDetails(); closeCpModal(); closeCommitModal(); closeLogs(); closeVolumeDetails(); closeNetworkDetails(); }
   });
 
   // ── Container stop / remove actions ──────────────────────────────────────
@@ -1275,6 +1301,8 @@
               <div class="item-name">🌐 ${n.name}</div>
               <div class="item-meta">bridge · ${n.id}${date ? ` · created ${date}` : ''}</div>
             </div>
+            <button class="item-info" title="Network details"
+              onclick="showNetworkDetails(event,'${n.name}')">ⓘ</button>
             <button class="item-remove" title="Remove network"
               onclick="removeNetwork(event,'${n.name}')">✕</button>
           </div>
@@ -1338,6 +1366,8 @@
               <div class="item-name">💾 ${v.name}</div>
               ${date ? `<div class="item-meta">created ${date}</div>` : ''}
             </div>
+            <button class="item-info" title="Volume details"
+              onclick="showVolumeDetails(event,'${v.name}')">ⓘ</button>
             <button class="item-remove" title="Remove volume"
               onclick="removeVolume(event,'${v.name}')">✕</button>
           </div>
@@ -1374,6 +1404,138 @@
     const res = await apiFetch(`/api/volumes/${encodeURIComponent(name)}`, { method: 'DELETE' });
     if (res?.ok) loadVolumes();
     else if (res) { const d = await res.json(); alert(d.error || 'Failed to remove volume'); }
+  }
+
+  // ── Volume details modal ──────────────────────────────────────────────────
+  function closeVolumeDetails() {
+    document.getElementById('volume-modal').classList.add('hidden');
+  }
+
+  async function showVolumeDetails(event, name) {
+    event.stopPropagation();
+    const modal = document.getElementById('volume-modal');
+    const body  = document.getElementById('volume-modal-body');
+    document.getElementById('volume-modal-title').textContent = name;
+    body.innerHTML = '<div style="color:#484f58;text-align:center;padding:32px 0">Loading…</div>';
+    modal.classList.remove('hidden');
+
+    const res = await apiFetch(`/api/volumes/${encodeURIComponent(name)}`);
+    if (!res) return;
+    const d = await res.json();
+    if (d.error) {
+      body.innerHTML = `<div style="color:#f85149;padding:8px">${d.error}</div>`;
+      return;
+    }
+
+    const fmt     = iso => iso ? new Date(iso).toLocaleString() : '—';
+    const fmtSize = bytes => {
+      if (bytes < 0)    return '—';
+      if (bytes === 0)  return '0 B';
+      if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(2)} GB`;
+      if (bytes >= 1e6) return `${(bytes / 1e6).toFixed(1)} MB`;
+      if (bytes >= 1e3) return `${(bytes / 1e3).toFixed(1)} KB`;
+      return `${bytes} B`;
+    };
+
+    const optEntries = Object.entries(d.options);
+    const optHtml    = optEntries.length === 0
+      ? '<span class="detail-empty">none</span>'
+      : optEntries.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('');
+
+    body.innerHTML = `
+      <div class="detail-section">
+        <h4>General</h4>
+        <table class="detail-table">
+          <tr><td>Name</td>       <td>${d.name}</td></tr>
+          <tr><td>Driver</td>     <td>${d.driver}</td></tr>
+          <tr><td>Scope</td>      <td>${d.scope}</td></tr>
+          <tr><td>Size</td>       <td>${fmtSize(d.size)}</td></tr>
+          <tr><td>In use by</td>  <td>${d.refcount >= 0 ? `${d.refcount} container(s)` : '—'}</td></tr>
+          <tr><td>Created</td>    <td>${fmt(d.created)}</td></tr>
+          <tr><td>Mountpoint</td> <td style="word-break:break-all;font-size:11px">${d.mountpoint}</td></tr>
+        </table>
+      </div>
+      <div class="detail-section">
+        <h4>Options</h4>
+        ${optEntries.length === 0
+          ? '<span class="detail-empty">none</span>'
+          : `<table class="detail-table">${optHtml}</table>`}
+      </div>`;
+  }
+
+  // ── Network details modal ─────────────────────────────────────────────────
+  function closeNetworkDetails() {
+    document.getElementById('network-modal').classList.add('hidden');
+  }
+
+  async function showNetworkDetails(event, name) {
+    event.stopPropagation();
+    const modal = document.getElementById('network-modal');
+    const body  = document.getElementById('network-modal-body');
+    document.getElementById('network-modal-title').textContent = name;
+    body.innerHTML = '<div style="color:#484f58;text-align:center;padding:32px 0">Loading…</div>';
+    modal.classList.remove('hidden');
+
+    const res = await apiFetch(`/api/networks/${encodeURIComponent(name)}`);
+    if (!res) return;
+    const d = await res.json();
+    if (d.error) {
+      body.innerHTML = `<div style="color:#f85149;padding:8px">${d.error}</div>`;
+      return;
+    }
+
+    const fmt = iso => iso ? new Date(iso).toLocaleString() : '—';
+
+    const ipamHtml = d.ipam.length === 0
+      ? '<span class="detail-empty">none</span>'
+      : d.ipam.map(c => `
+          <div class="detail-block">
+            <table class="detail-table">
+              <tr><td>Subnet</td> <td>${c.subnet}</td></tr>
+              <tr><td>Gateway</td><td>${c.gateway}</td></tr>
+            </table>
+          </div>`).join('');
+
+    const containersHtml = d.containers.length === 0
+      ? '<span class="detail-empty">none</span>'
+      : d.containers.map(c => `
+          <div class="detail-block">
+            <table class="detail-table">
+              <tr><td>Name</td><td>${c.name}</td></tr>
+              <tr><td>IPv4</td><td>${c.ipv4}</td></tr>
+              <tr><td>MAC</td> <td>${c.mac}</td></tr>
+            </table>
+          </div>`).join('');
+
+    const optEntries = Object.entries(d.options);
+    const optHtml = optEntries.length === 0
+      ? '<span class="detail-empty">none</span>'
+      : `<table class="detail-table">${optEntries.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('')}</table>`;
+
+    body.innerHTML = `
+      <div class="detail-section">
+        <h4>General</h4>
+        <table class="detail-table">
+          <tr><td>ID</td>        <td>${d.id}</td></tr>
+          <tr><td>Driver</td>    <td>${d.driver}</td></tr>
+          <tr><td>Scope</td>     <td>${d.scope}</td></tr>
+          <tr><td>Internal</td>  <td>${d.internal ? 'yes' : 'no'}</td></tr>
+          <tr><td>Attachable</td><td>${d.attachable ? 'yes' : 'no'}</td></tr>
+          <tr><td>Created</td>   <td>${fmt(d.created)}</td></tr>
+        </table>
+      </div>
+      <div class="detail-section">
+        <h4>IPAM</h4>
+        ${ipamHtml}
+      </div>
+      <div class="detail-section">
+        <h4>Connected Containers</h4>
+        ${containersHtml}
+      </div>
+      <div class="detail-section">
+        <h4>Options</h4>
+        ${optHtml}
+      </div>`;
   }
 
   // ── Navigation ────────────────────────────────────────────────────────────
