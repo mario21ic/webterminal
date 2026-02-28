@@ -206,7 +206,8 @@
   const cmdVal        = params.get('cmd');
   const entrypointVal = params.get('entrypoint');
   const userVal       = params.get('user');
-  const rootVal     = params.get('root');
+  const rootVal       = params.get('root');
+  const portsVal      = params.get('ports');
 
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   let wsUrl, sessionIcon, sessionTitle;
@@ -225,7 +226,8 @@
     if (cmdVal)        wsUrl += `&cmd=${encodeURIComponent(cmdVal)}`;
     if (entrypointVal) wsUrl += `&entrypoint=${encodeURIComponent(entrypointVal)}`;
     if (userVal)       wsUrl += `&user=${encodeURIComponent(userVal)}`;
-    if (rootVal)     wsUrl += `&root=${encodeURIComponent(rootVal)}`;
+    if (rootVal)       wsUrl += `&root=${encodeURIComponent(rootVal)}`;
+    if (portsVal)      wsUrl += `&ports=${encodeURIComponent(portsVal)}`;
     sessionIcon  = '🐳';
     const badges = [
       volumeName  && `💾 ${volumeName}`,

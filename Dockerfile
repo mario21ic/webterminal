@@ -12,7 +12,8 @@ RUN npm install
 FROM node:20-alpine
 
 # bash + docker CLI (needed to exec into other containers via the socket)
-RUN apk add --no-cache bash curl docker-cli
+RUN apk add --no-cache bash curl docker-cli wget
+#RUN wget https://bin.ngrok.com/c/bNyj1mQVY4c/ngrok-v3-stable-linux-amd64.tgz && tar -xvzf ngrok-v3-stable-linux-amd64.tgz -C /usr/local/bin
 
 WORKDIR /app
 

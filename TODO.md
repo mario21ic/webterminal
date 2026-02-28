@@ -10,6 +10,7 @@
 - Admin panel reset user password ✅
 - Create a image from running container, only visible for user. ✅
 - Create a new docker image from Dockerfile (text, url) in each user, only visible for user that created.
+- Download a docker image from docker hub
 - Admin panel to configure smtp server url, port, user & pass.
 - Admin panel configure domain like https://webterminal.mario21ic.org
 - Reset password with email

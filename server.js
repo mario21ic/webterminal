@@ -12,6 +12,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { execFile } = require('child_process');
+const ngrok = require('@ngrok/ngrok');
 
 const PORT           = process.env.PORT           || 3000;
 const LOCAL_SHELL    = process.env.SHELL          || '/bin/bash';
@@ -35,6 +36,7 @@ db.exec(`
     max_containers INTEGER NOT NULL DEFAULT 5,
     max_volumes    INTEGER NOT NULL DEFAULT 5,
     max_networks   INTEGER NOT NULL DEFAULT 5,
+    ngrok_token    TEXT,
     created_at     TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
   )
 `);
@@ -44,6 +46,7 @@ try { db.exec(`ALTER TABLE users ADD COLUMN active INTEGER NOT NULL DEFAULT 1`);
 try { db.exec(`ALTER TABLE users ADD COLUMN max_containers INTEGER NOT NULL DEFAULT 5`); } catch (_) {}
 try { db.exec(`ALTER TABLE users ADD COLUMN max_volumes    INTEGER NOT NULL DEFAULT 5`); } catch (_) {}
 try { db.exec(`ALTER TABLE users ADD COLUMN max_networks   INTEGER NOT NULL DEFAULT 5`); } catch (_) {}
+try { db.exec(`ALTER TABLE users ADD COLUMN ngrok_token TEXT`); } catch (_) {}
 
 // ── Seed users on first run ───────────────────────────────────────────────────
 function seedUser(username, password, role) {
@@ -85,6 +88,7 @@ const stmts = {
   updateMaxContainers: db.prepare('UPDATE users SET max_containers = ? WHERE username = ?'),
   updateMaxVolumes:    db.prepare('UPDATE users SET max_volumes    = ? WHERE username = ?'),
   updateMaxNetworks:   db.prepare('UPDATE users SET max_networks   = ? WHERE username = ?'),
+  updateNgrokToken:    db.prepare('UPDATE users SET ngrok_token    = ? WHERE username = ?'),
   deleteUser:        db.prepare('DELETE FROM users WHERE username = ?'),
 };
 
@@ -178,7 +182,7 @@ app.post('/api/logout', (req, res) => {
 
 app.get('/api/me', requireAuthAPI, (req, res) => {
   const u = stmts.findUser.get(req.session.user.username);
-  res.json({ username: u.username, role: u.role, max_containers: u.max_containers, max_volumes: u.max_volumes, max_networks: u.max_networks });
+  res.json({ username: u.username, role: u.role, max_containers: u.max_containers, max_volumes: u.max_volumes, max_networks: u.max_networks, has_ngrok_token: !!u.ngrok_token });
 });
 
 // ── Admin API ─────────────────────────────────────────────────────────────────
@@ -264,6 +268,133 @@ app.post('/api/me/password', requireAuthAPI, (req, res) => {
   res.json({ ok: true });
 });
 
+// ── ngrok token ───────────────────────────────────────────────────────────────
+app.put('/api/me/ngrok-token', requireAuthAPI, (req, res) => {
+  const { token } = req.body;
+  const { username } = req.session.user;
+  stmts.updateNgrokToken.run(token?.trim() || null, username);
+  res.json({ ok: true });
+});
+
+// ── ngrok tunnels (in-memory) ─────────────────────────────────────────────────
+const activeTunnels = new Map(); // key: `${username}:${containerId}:${port}`
+
+async function closeTunnelsForContainer(username, containerId) {
+  for (const [key, t] of activeTunnels) {
+    if (t.username === username && t.containerId === containerId) {
+      try { await t.listener.close(); } catch (_) {}
+      activeTunnels.delete(key);
+    }
+  }
+}
+
+async function closeTunnelsForUser(username) {
+  for (const [key, t] of activeTunnels) {
+    if (t.username === username) {
+      try { await t.listener.close(); } catch (_) {}
+      activeTunnels.delete(key);
+    }
+  }
+}
+
+// List tunnels for a container
+app.get('/api/containers/:id/expose', requireAuthAPI, (req, res) => {
+  const { id } = req.params;
+  const { username } = req.session.user;
+  const result = [];
+  for (const t of activeTunnels.values()) {
+    if (t.username === username && t.containerId === id) {
+      result.push({ port: t.port, url: t.url });
+    }
+  }
+  res.json(result);
+});
+
+// Start a tunnel for a container port
+app.post('/api/containers/:id/expose', requireAuthAPI, async (req, res) => {
+  if (!docker) return res.status(503).json({ error: 'Docker not available' });
+  const { id } = req.params;
+  const { port } = req.body;
+  if (!port) return res.status(400).json({ error: 'Port is required' });
+
+  const { username } = req.session.user;
+  const dbUser = stmts.findUser.get(username);
+  if (!dbUser.ngrok_token)
+    return res.status(400).json({ error: 'ngrok token not configured. Set it via the ngrok button in the header.' });
+
+  // Verify ownership
+  try {
+    const owned = await docker.listContainers({
+      all: true,
+      filters: { id: [id], label: [`${LABEL_USER}=${username}`] },
+    });
+    if (owned.length === 0) return res.status(404).json({ error: 'Container not found or not yours' });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+
+  // Resolve address: prefer published host port, fall back to container IP
+  let addr;
+  try {
+    const info = await docker.getContainer(id).inspect();
+    const bindings = info.NetworkSettings.Ports || {};
+    const tcpKey   = `${port}/tcp`;
+    if (bindings[tcpKey]?.[0]?.HostPort) {
+      addr = `http://localhost:${bindings[tcpKey][0].HostPort}`;
+    } else {
+      const nets = info.NetworkSettings.Networks;
+      const ip   = Object.values(nets)[0]?.IPAddress;
+      if (!ip) return res.status(400).json({ error: 'Container has no network IP. Make sure it is running.' });
+      addr = `http://${ip}:${port}`;
+    }
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+
+  // Close any existing tunnel on the same port
+  const tunnelKey = `${username}:${id}:${port}`;
+  if (activeTunnels.has(tunnelKey)) {
+    try { await activeTunnels.get(tunnelKey).listener.close(); } catch (_) {}
+    activeTunnels.delete(tunnelKey);
+  }
+
+  try {
+    const listener = await ngrok.forward({ addr, authtoken: dbUser.ngrok_token });
+    const url = listener.url();
+    activeTunnels.set(tunnelKey, { listener, url, port: parseInt(port, 10), containerId: id, username });
+    res.json({ ok: true, url, addr });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Stop a tunnel
+app.delete('/api/containers/:id/expose/:port', requireAuthAPI, async (req, res) => {
+  const { id, port } = req.params;
+  const { username } = req.session.user;
+  const tunnelKey = `${username}:${id}:${port}`;
+  const tunnel = activeTunnels.get(tunnelKey);
+  if (!tunnel) return res.status(404).json({ error: 'No active tunnel on that port' });
+  try {
+    await tunnel.listener.close();
+    activeTunnels.delete(tunnelKey);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+// Parse "8080:80, 443:443" → ['-p','8080:80','-p','443:443']
+function parsePortFlags(portsStr) {
+  if (!portsStr?.trim()) return [];
+  return portsStr.split(',')
+    .map(s => s.trim())
+    .filter(s => /^\d+:\d+$/.test(s))
+    .flatMap(s => ['-p', s]);
+}
+
 // ── Docker API (user-scoped) ──────────────────────────────────────────────────
 app.get('/api/containers', requireAuthAPI, async (req, res) => {
   if (!docker) return res.json([]);
@@ -348,6 +479,7 @@ app.delete('/api/containers/:id', requireAuthAPI, async (req, res) => {
     });
     if (owned.length === 0)
       return res.status(404).json({ error: 'Container not found or not yours' });
+    await closeTunnelsForContainer(username, id);
     await docker.getContainer(id).remove({ force: true });
     res.json({ ok: true });
   } catch (err) {
@@ -404,6 +536,7 @@ app.delete('/api/containers', requireAuthAPI, async (req, res) => {
       all: true,
       filters: { label: [`${LABEL_USER}=${username}`] },
     });
+    await closeTunnelsForUser(username);
     await Promise.all(
       list.map(c => docker.getContainer(c.Id).remove({ force: true }).catch(() => {}))
     );
@@ -697,7 +830,7 @@ app.post('/api/containers/:id/commit', requireAuthAPI, async (req, res) => {
 app.post('/api/containers/run', requireAuthAPI, async (req, res) => {
   if (!docker) return res.status(503).json({ error: 'Docker not available' });
   const { username } = req.session.user;
-  let { image, volume, network, mem = 512, cpu = 1, shell, cmd, entrypoint, user: userParam } = req.body;
+  let { image, volume, network, ports, mem = 512, cpu = 1, shell, cmd, entrypoint, user: userParam } = req.body;
 
   if (!image?.trim()) return res.status(400).json({ error: 'Image is required' });
 
@@ -734,15 +867,17 @@ app.post('/api/containers/run', requireAuthAPI, async (req, res) => {
   mem = Math.max(64,  Math.min(8192, parseInt(mem,  10) || 512));
   cpu = Math.max(0.1, Math.min(8,    parseFloat(cpu) || 1));
 
+  const portFlags = parsePortFlags(ports);
   const args = ['run', '-d', '-w', '/data',
     `--label=${LABEL_USER}=${username}`,
     '--label=webterminal=true',
     '--memory', `${mem}m`,
     '--cpus',   String(cpu),
+    ...portFlags,
     ...(userParam  && userParam !== 'root' ? ['--user',       userParam]  : []),
     ...(entrypoint                         ? ['--entrypoint', entrypoint] : []),
     ...(volume      ? ['-v', `${volume}:/data`]    : []),
-    ...(networkName ? ['--network', networkName]   : []),
+    // ...(networkName ? ['--network', networkName]   : []),
     image.trim(),
     ...(shell ? ['sh', '-c', cmd || 'command -v bash >/dev/null 2>&1 && exec bash || exec sh'] : []),
   ];
@@ -891,6 +1026,7 @@ wss.on('connection', async (ws, req) => {
     const cmdParam        = url.searchParams.get('cmd')        || null;
     const entrypointParam = url.searchParams.get('entrypoint') || null;
     const userParam       = url.searchParams.get('user')       || null; // 'root' | 'uid:gid' | null
+    const portFlags       = parsePortFlags(url.searchParams.get('ports'));
 
     console.log(`[${username}] run → ${imageName}${volumeName ? ` +vol:${volumeName}` : ''}${networkName ? ` +net:${networkName}` : ''} mem:${mem}m cpu:${cpu} user:${userParam || 'default'} shell:${shell}`);
     cmd  = 'docker';
@@ -899,6 +1035,7 @@ wss.on('connection', async (ws, req) => {
       '--label=webterminal=true',
       '--memory', `${mem}m`,
       '--cpus',   String(cpu),
+      ...portFlags,
       ...(userParam       && userParam !== 'root' ? ['--user',       userParam]       : []),
       ...(entrypointParam                         ? ['--entrypoint', entrypointParam] : []),
       ...(volumeName  ? ['-v', `${volumeName}:/data`]  : []),

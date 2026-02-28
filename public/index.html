@@ -345,6 +345,81 @@
     }
     .item-commit:hover { color: #d2a8ff; background: rgba(210,168,255,.1); border-color: rgba(210,168,255,.3); }
 
+    .item-expose {
+      background: transparent;
+      border: 1px solid transparent;
+      color: #484f58;
+      cursor: pointer;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 500;
+      line-height: 1.4;
+      flex-shrink: 0;
+      white-space: nowrap;
+      transition: color .15s, background .15s, border-color .15s;
+    }
+    .item-expose:hover { color: #39c5cf; background: rgba(57,197,207,.1); border-color: rgba(57,197,207,.3); }
+
+    /* ── ngrok styles ─────────────────────────────────────────────────────── */
+    .ngrok-btn {
+      background: transparent;
+      color: #8b949e;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 5px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+    .ngrok-btn:hover { background: #0f2a1f; color: #3fb950; border-color: #3fb950; }
+    .ngrok-btn.configured { color: #3fb950; border-color: rgba(63,185,80,.4); }
+
+    .tunnel-list { display: flex; flex-direction: column; gap: 8px; }
+    .tunnel-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 8px 10px;
+    }
+    .tunnel-port-badge {
+      font-size: 11px;
+      color: #8b949e;
+      background: #21262d;
+      border-radius: 4px;
+      padding: 2px 7px;
+      white-space: nowrap;
+      font-family: monospace;
+    }
+    .tunnel-url {
+      flex: 1;
+      font-size: 12px;
+      color: #58a6ff;
+      font-family: 'Cascadia Code','Fira Code',monospace;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      text-decoration: none;
+    }
+    .tunnel-url:hover { text-decoration: underline; }
+    .copy-url-btn, .stop-tunnel-btn {
+      background: transparent;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      font-size: 11px;
+      cursor: pointer;
+      padding: 2px 8px;
+      transition: all .15s;
+      flex-shrink: 0;
+    }
+    .copy-url-btn { color: #8b949e; }
+    .copy-url-btn:hover { color: #e6edf3; border-color: #8b949e; }
+    .stop-tunnel-btn { color: #f85149; }
+    .stop-tunnel-btn:hover { background: rgba(248,81,73,.1); border-color: rgba(248,81,73,.4); }
+
     .item-log {
       background: transparent;
       border: 1px solid transparent;
@@ -818,6 +893,7 @@
       <div class="avatar" id="user-avatar">?</div>
       <span id="username-display">…</span>
     </div>
+    <button class="ngrok-btn" id="ngrok-btn" onclick="openNgrokModal()" title="Configure ngrok token">ngrok</button>
     <button class="change-pass-btn" id="change-pass-btn">Change Password</button>
     <button class="signout-btn" id="signout-btn">Sign Out</button>
   </div>
@@ -887,6 +963,9 @@
     <select class="vol-select net-select" id="net-select">
       <option value="">— none —</option>
     </select>
+    <p class="vol-label">Publish ports (optional)</p>
+    <input type="text" id="ports-input" class="override-cmd-input"
+      placeholder="e.g. 8080:80, 443:443" />
     <div class="resource-row">
       <div class="resource-field">
         <p class="vol-label">Memory limit</p>
@@ -1083,6 +1162,64 @@
   </div>
 </div>
 
+<!-- ── ngrok Token modal ─────────────────────────────────────────────────── -->
+<div class="modal-backdrop hidden" id="ngrok-modal"
+     onclick="if(event.target===this)closeNgrokModal()">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header">
+      <h3 style="font-family:inherit">ngrok Configuration</h3>
+      <button class="modal-close" onclick="closeNgrokModal()">✕</button>
+    </div>
+    <div class="modal-body" style="gap:12px">
+      <p style="font-size:12px;color:#8b949e;line-height:1.6">
+        Set your <a href="https://dashboard.ngrok.com/get-started/your-authtoken" target="_blank"
+          style="color:#58a6ff;">ngrok authtoken</a> to expose container ports to the internet.
+        Tokens are stored per-user and never shared.
+      </p>
+      <div class="cp-form-group">
+        <label>Auth Token</label>
+        <input type="password" id="ngrok-token-input" placeholder="Paste your ngrok authtoken…" autocomplete="off" />
+      </div>
+      <div class="cp-form-error" id="ngrok-error"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" id="ngrok-clear-btn" onclick="clearNgrokToken()">Clear Token</button>
+      <button class="btn-secondary" onclick="closeNgrokModal()">Cancel</button>
+      <button class="btn-primary" id="ngrok-save-btn" onclick="saveNgrokToken()">Save Token</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Expose Port modal ──────────────────────────────────────────────────── -->
+<div class="modal-backdrop hidden" id="expose-modal"
+     onclick="if(event.target===this)closeExposeModal()">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <span style="font-size:15px">🌐</span>
+      <h3 style="font-family:inherit">Expose Port — <span id="expose-container-name"></span></h3>
+      <button class="modal-close" onclick="closeExposeModal()">✕</button>
+    </div>
+    <div class="modal-body" style="gap:10px">
+      <div class="cp-form-group">
+        <label>Container Port to Expose</label>
+        <input type="number" id="expose-port-input" placeholder="e.g. 3000" min="1" max="65535"
+          onkeydown="if(event.key==='Enter')startTunnel()" />
+      </div>
+      <button class="btn-primary" id="expose-start-btn" onclick="startTunnel()"
+        style="width:100%">Start Tunnel</button>
+      <div class="cp-form-error" id="expose-error"></div>
+      <div id="expose-tunnels-section" style="display:none">
+        <div style="font-size:11px;font-weight:600;color:#8b949e;text-transform:uppercase;
+          letter-spacing:.05em;margin-bottom:8px;">Active Tunnels</div>
+        <div class="tunnel-list" id="expose-tunnels-list"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeExposeModal()">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Logs modal ────────────────────────────────────────────────────────── -->
 <div class="modal-backdrop hidden" id="logs-modal"
      onclick="if(event.target===this)closeLogs()">
@@ -1214,6 +1351,8 @@
               onclick="viewLogs(event,'${c.id}','${c.name}')">≡ Log</button>
             <button class="item-commit" title="Create image from this container"
               onclick="openCommitModal(event,'${c.id}')">⬆ Image</button>
+            <button class="item-expose" title="Expose port via ngrok"
+              onclick="openExposeModal(event,'${c.id}','${c.name}')">🌐 Expose</button>
             <button class="item-stop"  title="Stop container"
               onclick="stopContainer(event,'${c.id}')">■ Stop</button>`
             : `<button class="item-start" title="Start container"
@@ -1422,7 +1561,7 @@
 
   // Close modals on Escape key
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { closeDetails(); closeCpModal(); closeCommitModal(); closeLogs(); closeVolumeDetails(); closeNetworkDetails(); closeImageDetails(); }
+    if (e.key === 'Escape') { closeDetails(); closeCpModal(); closeCommitModal(); closeLogs(); closeVolumeDetails(); closeNetworkDetails(); closeImageDetails(); closeNgrokModal(); closeExposeModal(); }
   });
 
   // ── Container stop / remove actions ──────────────────────────────────────
@@ -1881,6 +2020,7 @@
     } else if (type === 'image' && selectedImage) {
       const vol      = document.getElementById('vol-select').value;
       const net      = document.getElementById('net-select').value;
+      const ports    = document.getElementById('ports-input').value.trim();
       const mem      = document.getElementById('mem-input').value || '512';
       const cpu      = document.getElementById('cpu-input').value || '1';
       const bg       = document.getElementById('bg-check').checked;
@@ -1900,6 +2040,7 @@
         const body = { image: selectedImage, mem, cpu };
         if (vol)                    body.volume     = vol;
         if (net)                    body.network    = net;
+        if (ports)                  body.ports      = ports;
         if (shell)                  body.shell      = true;
         if (override && cmdVal)     body.cmd        = cmdVal;
         if (overrideEp && epVal)    body.entrypoint = epVal;
@@ -1917,6 +2058,7 @@
         let url = `/terminal.html?image=${encodeURIComponent(selectedImage)}`;
         if (vol)   url += `&volume=${encodeURIComponent(vol)}`;
         if (net)   url += `&network=${encodeURIComponent(net)}`;
+        if (ports) url += `&ports=${encodeURIComponent(ports)}`;
         url += `&mem=${encodeURIComponent(mem)}&cpu=${encodeURIComponent(cpu)}`;
         if (shell)               url += '&shell=1';
         if (override && cmdVal)  url += `&cmd=${encodeURIComponent(cmdVal)}`;
@@ -2089,7 +2231,7 @@
   async function loadUser() {
     const res = await apiFetch('/api/me');
     if (!res) return;
-    const { username, role, max_containers, max_volumes, max_networks } = await res.json();
+    const { username, role, max_containers, max_volumes, max_networks, has_ngrok_token } = await res.json();
     document.getElementById('username-display').textContent = username;
     document.getElementById('user-avatar').textContent      = username[0].toUpperCase();
     if (role === 'admin') document.getElementById('admin-link').style.display = 'inline-flex';
@@ -2097,6 +2239,8 @@
     maxContainers = max_containers;
     maxVolumes    = max_volumes;
     maxNetworks   = max_networks;
+    hasNgrokToken = has_ngrok_token;
+    updateNgrokBtn();
     updateContainerCounter(
       document.getElementById('container-list').querySelectorAll('.list-item').length
     );
@@ -2106,6 +2250,158 @@
     updateNetworkCounter(
       document.getElementById('network-list').querySelectorAll('.list-item').length
     );
+  }
+
+  // ── ngrok token modal ─────────────────────────────────────────────────────
+  let hasNgrokToken = false;
+
+  function openNgrokModal() {
+    document.getElementById('ngrok-token-input').value = '';
+    document.getElementById('ngrok-error').style.display = 'none';
+    document.getElementById('ngrok-modal').classList.remove('hidden');
+    setTimeout(() => document.getElementById('ngrok-token-input').focus(), 50);
+  }
+
+  function closeNgrokModal() {
+    document.getElementById('ngrok-modal').classList.add('hidden');
+  }
+
+  function updateNgrokBtn() {
+    const btn = document.getElementById('ngrok-btn');
+    if (!btn) return;
+    btn.className = hasNgrokToken ? 'ngrok-btn configured' : 'ngrok-btn';
+    btn.title     = hasNgrokToken ? 'ngrok token configured — click to update' : 'Configure ngrok token';
+  }
+
+  async function saveNgrokToken() {
+    const token   = document.getElementById('ngrok-token-input').value.trim();
+    const errorEl = document.getElementById('ngrok-error');
+    const btn     = document.getElementById('ngrok-save-btn');
+    errorEl.style.display = 'none';
+    if (!token) {
+      errorEl.textContent   = 'Token is required.';
+      errorEl.style.display = 'block';
+      return;
+    }
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      const res = await apiFetch('/api/me/ngrok-token', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
+      });
+      if (res?.ok) {
+        hasNgrokToken = true;
+        updateNgrokBtn();
+        closeNgrokModal();
+        showToast('ngrok token saved');
+      } else if (res) {
+        const d = await res.json();
+        errorEl.textContent   = d.error || 'Failed to save token.';
+        errorEl.style.display = 'block';
+      }
+    } finally {
+      btn.disabled = false; btn.textContent = 'Save Token';
+    }
+  }
+
+  async function clearNgrokToken() {
+    if (!confirm('Clear your ngrok token?')) return;
+    const res = await apiFetch('/api/me/ngrok-token', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: '' }),
+    });
+    if (res?.ok) {
+      hasNgrokToken = false;
+      updateNgrokBtn();
+      closeNgrokModal();
+      showToast('ngrok token cleared');
+    }
+  }
+
+  // ── Expose port modal ─────────────────────────────────────────────────────
+  let exposeContainerId = null;
+
+  async function openExposeModal(event, id, name) {
+    event.stopPropagation();
+    exposeContainerId = id;
+    document.getElementById('expose-container-name').textContent = name;
+    document.getElementById('expose-port-input').value           = '';
+    document.getElementById('expose-error').style.display        = 'none';
+    document.getElementById('expose-modal').classList.remove('hidden');
+    await loadTunnels();
+    setTimeout(() => document.getElementById('expose-port-input').focus(), 50);
+  }
+
+  function closeExposeModal() {
+    document.getElementById('expose-modal').classList.add('hidden');
+    exposeContainerId = null;
+  }
+
+  async function loadTunnels() {
+    if (!exposeContainerId) return;
+    const res = await apiFetch(`/api/containers/${exposeContainerId}/expose`);
+    if (!res) return;
+    const tunnels = await res.json();
+    const section = document.getElementById('expose-tunnels-section');
+    const list    = document.getElementById('expose-tunnels-list');
+    if (tunnels.length === 0) { section.style.display = 'none'; return; }
+    section.style.display = '';
+    list.innerHTML = tunnels.map(t => `
+      <div class="tunnel-row">
+        <span class="tunnel-port-badge">:${t.port}</span>
+        <a class="tunnel-url" href="${t.url}" target="_blank" title="${t.url}">${t.url}</a>
+        <button class="copy-url-btn" onclick="copyTunnelUrl('${t.url}',this)">Copy</button>
+        <button class="stop-tunnel-btn" onclick="stopTunnel(${t.port})">Stop</button>
+      </div>`).join('');
+  }
+
+  async function startTunnel() {
+    const port    = parseInt(document.getElementById('expose-port-input').value, 10);
+    const errorEl = document.getElementById('expose-error');
+    const btn     = document.getElementById('expose-start-btn');
+    errorEl.style.display = 'none';
+    if (!port || port < 1 || port > 65535) {
+      errorEl.textContent   = 'Enter a valid port number (1–65535).';
+      errorEl.style.display = 'block';
+      return;
+    }
+    btn.disabled = true; btn.textContent = 'Starting…';
+    try {
+      const res = await apiFetch(`/api/containers/${exposeContainerId}/expose`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ port }),
+      });
+      if (!res) return;
+      if (res.ok) {
+        const d = await res.json();
+        document.getElementById('expose-port-input').value = '';
+        await loadTunnels();
+        showToast(`Tunnel active: ${d.url}`);
+      } else {
+        const d = await res.json();
+        errorEl.textContent   = d.error || 'Failed to start tunnel.';
+        errorEl.style.display = 'block';
+      }
+    } finally {
+      btn.disabled = false; btn.textContent = 'Start Tunnel';
+    }
+  }
+
+  async function stopTunnel(port) {
+    const res = await apiFetch(`/api/containers/${exposeContainerId}/expose/${port}`, { method: 'DELETE' });
+    if (res?.ok) await loadTunnels();
+    else if (res) { const d = await res.json(); alert(d.error || 'Failed to stop tunnel'); }
+  }
+
+  function copyTunnelUrl(url, btn) {
+    navigator.clipboard.writeText(url).then(() => {
+      const orig = btn.textContent;
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = orig; }, 1500);
+    });
   }
 
   document.getElementById('signout-btn').addEventListener('click', async () => {
