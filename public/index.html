@@ -329,6 +329,22 @@
     }
     .item-start:hover { color: #3fb950; background: rgba(63,185,80,.1); border-color: rgba(63,185,80,.3); }
 
+    .item-commit {
+      background: transparent;
+      border: 1px solid transparent;
+      color: #484f58;
+      cursor: pointer;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 500;
+      line-height: 1.4;
+      flex-shrink: 0;
+      white-space: nowrap;
+      transition: color .15s, background .15s, border-color .15s;
+    }
+    .item-commit:hover { color: #d2a8ff; background: rgba(210,168,255,.1); border-color: rgba(210,168,255,.3); }
+
     /* ── New volume / network buttons ────────────────────────────────────── */
     .new-vol-btn {
       margin-left: auto;
@@ -831,6 +847,34 @@
   </div>
 </div>
 
+<!-- ── Create Image modal ───────────────────────────────────────────────── -->
+<div class="modal-backdrop hidden" id="commit-modal"
+     onclick="if(event.target===this)closeCommitModal()">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-header">
+      <h3 style="font-family:inherit">Create Image</h3>
+      <button class="modal-close" onclick="closeCommitModal()">✕</button>
+    </div>
+    <div class="modal-body" style="gap:12px">
+      <div class="cp-form-group">
+        <label>Image Name</label>
+        <input type="text" id="commit-name" autocomplete="off"
+               placeholder="e.g. myapp" />
+      </div>
+      <div class="cp-form-group">
+        <label>Tag</label>
+        <input type="text" id="commit-tag" autocomplete="off"
+               placeholder="latest" value="latest" />
+      </div>
+      <div class="cp-form-error" id="commit-error"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeCommitModal()">Cancel</button>
+      <button class="btn-primary" id="commit-submit" onclick="submitCommit()">Create Image</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Container details modal ──────────────────────────────────────────── -->
 <div class="modal-backdrop hidden" id="container-modal"
      onclick="if(event.target===this)closeDetails()">
@@ -908,9 +952,13 @@
           </div>
           <button class="item-info" title="Container details"
             onclick="showContainerDetails(event,'${c.id}')">ⓘ</button>
-          ${running
-            ? `<button class="item-stop"  title="Stop container"  onclick="stopContainer(event,'${c.id}')">■ Stop</button>`
-            : `<button class="item-start" title="Start container" onclick="startContainer(event,'${c.id}')">▶ Start</button>`}
+          ${running ? `
+            <button class="item-commit" title="Create image from this container"
+              onclick="openCommitModal(event,'${c.id}')">⬆ Image</button>
+            <button class="item-stop"  title="Stop container"
+              onclick="stopContainer(event,'${c.id}')">■ Stop</button>`
+            : `<button class="item-start" title="Start container"
+              onclick="startContainer(event,'${c.id}')">▶ Start</button>`}
           <button class="item-remove" title="Force-remove container"
             onclick="removeContainer(event,'${c.id}')">✕</button>
         </div>
@@ -1109,7 +1157,7 @@
 
   // Close modals on Escape key
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { closeDetails(); closeCpModal(); }
+    if (e.key === 'Escape') { closeDetails(); closeCpModal(); closeCommitModal(); }
   });
 
   // ── Container stop / remove actions ──────────────────────────────────────
@@ -1286,6 +1334,65 @@
       url += `&mem=${encodeURIComponent(mem)}&cpu=${encodeURIComponent(cpu)}`;
       if (root) url += '&root=1';
       window.location.href = url;
+    }
+  }
+
+  // ── Create Image (commit) modal ───────────────────────────────────────────
+  let commitContainerId = null;
+
+  function openCommitModal(event, id) {
+    event.stopPropagation();
+    commitContainerId = id;
+    document.getElementById('commit-name').value        = '';
+    document.getElementById('commit-tag').value         = 'latest';
+    document.getElementById('commit-error').style.display = 'none';
+    document.getElementById('commit-modal').classList.remove('hidden');
+    setTimeout(() => document.getElementById('commit-name').focus(), 50);
+  }
+
+  function closeCommitModal() {
+    document.getElementById('commit-modal').classList.add('hidden');
+    commitContainerId = null;
+  }
+
+  async function submitCommit() {
+    const name      = document.getElementById('commit-name').value.trim();
+    const tag       = document.getElementById('commit-tag').value.trim() || 'latest';
+    const errorEl   = document.getElementById('commit-error');
+    const submitBtn = document.getElementById('commit-submit');
+
+    errorEl.style.display = 'none';
+
+    if (!name) {
+      errorEl.textContent   = 'Image name is required.';
+      errorEl.style.display = 'block';
+      return;
+    }
+
+    submitBtn.disabled    = true;
+    submitBtn.textContent = 'Creating…';
+
+    try {
+      const res = await apiFetch(
+        `/api/containers/${encodeURIComponent(commitContainerId)}/commit`, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ name, tag }),
+        }
+      );
+      if (!res) return;
+
+      if (res.ok) {
+        closeCommitModal();
+        loadImagesAuth();
+      } else {
+        const data = await res.json();
+        errorEl.textContent   = data.error || 'Failed to create image.';
+        errorEl.style.display = 'block';
+      }
+    } finally {
+      submitBtn.disabled    = false;
+      submitBtn.textContent = 'Create Image';
     }
   }
 

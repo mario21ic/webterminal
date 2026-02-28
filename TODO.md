@@ -8,14 +8,16 @@
 - Admin panel with users and their containers (running, stopped, etc)
 - Admin panel with list of list to disable them ✅
 - Admin panel reset user password ✅
+- Create a image from running container, only visible for user. ✅
+- Create a new docker image from Dockerfile (text, url) in each user, only visible for user that created.
 - Admin panel to configure smtp server url, port, user & pass.
 - Admin panel configure domain like https://webterminal.mario21ic.org
 - Reset password with email
-- Create a new docker image in each user, only visible for user that created.
-- Create a image from running container, only visible for user.
 - Monitor docker containers.
 - Add a section to set environments vars, then add them into containers
 - Add a button to see logs on realtime
 - Add widget to open ports before to launch container
 - Audit module: log all events into a file to see on admin panel
 - Quota: set max containers per user ✅
+- Quota: set max networks per user 
+- Quota: set max volumes size per user 

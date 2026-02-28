@@ -491,9 +491,15 @@ app.delete('/api/networks/:name', requireAuthAPI, async (req, res) => {
 
 app.get('/api/images', requireAuthAPI, async (req, res) => {
   if (!docker) return res.json([]);
+  const { username } = req.session.user;
   try {
     const images = await docker.listImages();
     const result = images
+      // Show system images (no webterminal.user label) + images owned by this user
+      .filter(img => {
+        const owner = (img.Labels || {})[LABEL_USER];
+        return !owner || owner === username;
+      })
       .flatMap(img =>
         (img.RepoTags || [])
           .filter(tag => tag && tag !== '<none>:<none>')
@@ -504,6 +510,37 @@ app.get('/api/images', requireAuthAPI, async (req, res) => {
   } catch (err) {
     console.error('Failed to list images:', err.message);
     res.json([]);
+  }
+});
+
+app.post('/api/containers/:id/commit', requireAuthAPI, async (req, res) => {
+  if (!docker) return res.status(503).json({ error: 'Docker not available' });
+  const { id } = req.params;
+  const { name, tag = 'latest' } = req.body;
+  const { username } = req.session.user;
+
+  if (!name?.trim()) return res.status(400).json({ error: 'Image name is required' });
+
+  try {
+    const owned = await docker.listContainers({
+      all: true,
+      filters: { id: [id], label: [`${LABEL_USER}=${username}`] },
+    });
+    if (owned.length === 0)
+      return res.status(404).json({ error: 'Container not found or not yours' });
+
+    await docker.getContainer(id).commit({
+      repo: name.trim(),
+      tag:  tag.trim() || 'latest',
+      changes: [
+        `LABEL ${LABEL_USER}=${username}`,
+        'LABEL webterminal=true',
+      ],
+    });
+    res.status(201).json({ ok: true });
+  } catch (err) {
+    if (err.statusCode === 409) return res.status(409).json({ error: 'Image name/tag already in use' });
+    res.status(500).json({ error: err.message });
   }
 });
 
