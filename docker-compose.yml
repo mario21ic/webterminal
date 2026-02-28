@@ -1,9 +1,24 @@
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: webterminal_redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   webterminal:
     build: .
     image: mario21ic/webterminal:latest
     platform: linux/amd64
     container_name: webterminal
+    depends_on:
+      redis:
+        condition: service_healthy
     volumes:
       # Dev
       - ./server.js:/app/server.js:ro
@@ -19,7 +34,10 @@ services:
       - SHELL=/bin/bash
       - SESSION_SECRET=change-me-in-production
       - ADMIN_USER=admin:changeme
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
     restart: unless-stopped
 
 volumes:
   webterminal_data:
+  redis_data:

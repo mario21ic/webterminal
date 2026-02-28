@@ -4,6 +4,8 @@ const WebSocket = require('ws');
 const pty = require('node-pty');
 const Docker = require('dockerode');
 const session = require('express-session');
+const RedisStore = require('connect-redis').default;
+const Redis = require('ioredis');
 const bcrypt = require('bcryptjs');
 const Database = require('better-sqlite3');
 const path = require('path');
@@ -87,12 +89,23 @@ try {
   console.warn('Docker socket not available:', e.message);
 }
 
+// ── Redis ─────────────────────────────────────────────────────────────────────
+const redisClient = new Redis({
+  host:     process.env.REDIS_HOST     || '127.0.0.1',
+  port:     parseInt(process.env.REDIS_PORT || '6379', 10),
+  password: process.env.REDIS_PASSWORD || undefined,
+  retryStrategy: times => Math.min(times * 100, 3000),
+});
+redisClient.on('connect', () => console.log('[redis] connected'));
+redisClient.on('error',   err => console.error('[redis] error:', err.message));
+
 // ── Express + session ─────────────────────────────────────────────────────────
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
 const sessionMiddleware = session({
+  store: new RedisStore({ client: redisClient }),
   secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,

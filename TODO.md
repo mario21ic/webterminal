@@ -30,9 +30,9 @@
 - Bug usuario crea con el mismo nombre no avisa, debe ser prefijo <username>/
 - Bug cuando crea debe quedar un loading o porcentaje avance
 - Run a container without a shell, just command by default like nginx: nginx -g 'daemon off;'
-- Session storage on third party
+- Session storage on third party ✅
 
 - Details of volume ✅
 - Details of network ✅
 - Always run the attach command unless the run as root checkbox is checked ✅
-
+- Add override commands using shell
