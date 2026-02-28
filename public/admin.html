@@ -360,13 +360,15 @@
           <th>Username</th>
           <th>Role</th>
           <th>Active</th>
-          <th>Limit</th>
+          <th>Containers</th>
+          <th>Volumes</th>
+          <th>Networks</th>
           <th>Created At</th>
           <th>Actions</th>
         </tr>
       </thead>
       <tbody id="users-table">
-        <tr class="empty-row"><td colspan="6">Loading…</td></tr>
+        <tr class="empty-row"><td colspan="8">Loading…</td></tr>
       </tbody>
     </table>
   </div>
@@ -425,6 +427,16 @@
         <input type="number" id="f-max-containers" min="1" max="100" value="5" />
         <span class="form-hint">Maximum number of containers this user can run (1–100)</span>
       </div>
+      <div class="form-group">
+        <label>Max Volumes</label>
+        <input type="number" id="f-max-volumes" min="1" max="100" value="5" />
+        <span class="form-hint">Maximum number of volumes this user can create (1–100)</span>
+      </div>
+      <div class="form-group">
+        <label>Max Networks</label>
+        <input type="number" id="f-max-networks" min="1" max="100" value="5" />
+        <span class="form-hint">Maximum number of networks this user can create (1–100)</span>
+      </div>
       <div class="form-group-check" id="f-active-group" style="display:none">
         <input type="checkbox" id="f-active" checked />
         <label for="f-active">Active — user can log in and run containers</label>
@@ -477,7 +489,7 @@
     const tbody  = document.getElementById('users-table');
 
     if (users.length === 0) {
-      tbody.innerHTML = '<tr class="empty-row"><td colspan="6">No users found</td></tr>';
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="8">No users found</td></tr>';
       return;
     }
 
@@ -496,10 +508,12 @@
           <td><span class="role-badge ${u.role}">${u.role}</span></td>
           <td><span class="active-badge ${active ? 'on' : 'off'}">${active ? 'active' : 'inactive'}</span></td>
           <td class="td-limit">${u.max_containers}</td>
+          <td class="td-limit">${u.max_volumes}</td>
+          <td class="td-limit">${u.max_networks}</td>
           <td class="td-date">${date}</td>
           <td class="td-actions">
             <button class="btn-edit"
-              onclick='openEdit(${JSON.stringify(u.username)}, ${JSON.stringify(u.role)}, ${active}, ${u.max_containers})'>
+              onclick='openEdit(${JSON.stringify(u.username)}, ${JSON.stringify(u.role)}, ${active}, ${u.max_containers}, ${u.max_volumes}, ${u.max_networks})'>
               Edit
             </button>
             <button class="btn-reset-pass"
@@ -530,6 +544,8 @@
     document.getElementById('f-pass-group').style.display  = '';
     document.getElementById('f-role').value               = 'user';
     document.getElementById('f-max-containers').value     = '5';
+    document.getElementById('f-max-volumes').value        = '5';
+    document.getElementById('f-max-networks').value       = '5';
     document.getElementById('f-active').checked           = true;
     document.getElementById('f-active-group').style.display = '';
     document.getElementById('form-error').style.display   = 'none';
@@ -537,7 +553,7 @@
     setTimeout(() => document.getElementById('f-username').focus(), 50);
   }
 
-  function openEdit(username, role, active, maxContainers) {
+  function openEdit(username, role, active, maxContainers, maxVolumes, maxNetworks) {
     editUsername = username;
     document.getElementById('modal-title').textContent    = `Edit: ${username}`;
     document.getElementById('form-submit').textContent    = 'Save Changes';
@@ -546,6 +562,8 @@
     document.getElementById('f-pass-group').style.display  = 'none';
     document.getElementById('f-role').value               = role;
     document.getElementById('f-max-containers').value     = maxContainers;
+    document.getElementById('f-max-volumes').value        = maxVolumes;
+    document.getElementById('f-max-networks').value       = maxNetworks;
     document.getElementById('f-active').checked           = active;
     document.getElementById('f-active-group').style.display = '';
     document.getElementById('form-error').style.display   = 'none';
@@ -573,6 +591,8 @@
     const password  = editUsername ? null : document.getElementById('f-password').value;
     const role           = document.getElementById('f-role').value;
     const max_containers = parseInt(document.getElementById('f-max-containers').value, 10) || 5;
+    const max_volumes    = parseInt(document.getElementById('f-max-volumes').value, 10) || 5;
+    const max_networks   = parseInt(document.getElementById('f-max-networks').value, 10) || 5;
     const active         = document.getElementById('f-active').checked;
     const errorEl   = document.getElementById('form-error');
     const submitBtn = document.getElementById('form-submit');
@@ -600,13 +620,13 @@
         res = await apiFetch(`/api/admin/users/${encodeURIComponent(editUsername)}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ role, active, max_containers }),
+          body: JSON.stringify({ role, active, max_containers, max_volumes, max_networks }),
         });
       } else {
         res = await apiFetch('/api/admin/users', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username, password, role, active, max_containers }),
+          body: JSON.stringify({ username, password, role, active, max_containers, max_volumes, max_networks }),
         });
       }
 

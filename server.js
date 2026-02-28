@@ -33,6 +33,8 @@ db.exec(`
                   CHECK(role IN ('admin','user')),
     active         INTEGER NOT NULL DEFAULT 1,
     max_containers INTEGER NOT NULL DEFAULT 5,
+    max_volumes    INTEGER NOT NULL DEFAULT 5,
+    max_networks   INTEGER NOT NULL DEFAULT 5,
     created_at     TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
   )
 `);
@@ -40,6 +42,8 @@ db.exec(`
 // ── Migrate existing databases ─────────────────────────────────────────────
 try { db.exec(`ALTER TABLE users ADD COLUMN active INTEGER NOT NULL DEFAULT 1`); } catch (_) {}
 try { db.exec(`ALTER TABLE users ADD COLUMN max_containers INTEGER NOT NULL DEFAULT 5`); } catch (_) {}
+try { db.exec(`ALTER TABLE users ADD COLUMN max_volumes    INTEGER NOT NULL DEFAULT 5`); } catch (_) {}
+try { db.exec(`ALTER TABLE users ADD COLUMN max_networks   INTEGER NOT NULL DEFAULT 5`); } catch (_) {}
 
 // ── Seed users on first run ───────────────────────────────────────────────────
 function seedUser(username, password, role) {
@@ -73,12 +77,14 @@ if (db.prepare('SELECT COUNT(*) as n FROM users').get().n === 0) {
 // ── DB helpers ────────────────────────────────────────────────────────────────
 const stmts = {
   findUser:     db.prepare('SELECT * FROM users WHERE username = ?'),
-  listUsers:         db.prepare('SELECT username, role, active, max_containers, created_at FROM users ORDER BY created_at ASC'),
-  createUser:        db.prepare('INSERT INTO users (username, password_hash, role, active, max_containers) VALUES (?, ?, ?, ?, ?)'),
+  listUsers:         db.prepare('SELECT username, role, active, max_containers, max_volumes, max_networks, created_at FROM users ORDER BY created_at ASC'),
+  createUser:        db.prepare('INSERT INTO users (username, password_hash, role, active, max_containers, max_volumes, max_networks) VALUES (?, ?, ?, ?, ?, ?, ?)'),
   updatePass:        db.prepare('UPDATE users SET password_hash = ? WHERE username = ?'),
   updateRole:        db.prepare('UPDATE users SET role = ? WHERE username = ?'),
   updateActive:      db.prepare('UPDATE users SET active = ? WHERE username = ?'),
   updateMaxContainers: db.prepare('UPDATE users SET max_containers = ? WHERE username = ?'),
+  updateMaxVolumes:    db.prepare('UPDATE users SET max_volumes    = ? WHERE username = ?'),
+  updateMaxNetworks:   db.prepare('UPDATE users SET max_networks   = ? WHERE username = ?'),
   deleteUser:        db.prepare('DELETE FROM users WHERE username = ?'),
 };
 
@@ -172,7 +178,7 @@ app.post('/api/logout', (req, res) => {
 
 app.get('/api/me', requireAuthAPI, (req, res) => {
   const u = stmts.findUser.get(req.session.user.username);
-  res.json({ username: u.username, role: u.role, max_containers: u.max_containers });
+  res.json({ username: u.username, role: u.role, max_containers: u.max_containers, max_volumes: u.max_volumes, max_networks: u.max_networks });
 });
 
 // ── Admin API ─────────────────────────────────────────────────────────────────
@@ -181,14 +187,16 @@ app.get('/api/admin/users', requireAuthAPI, requireAdmin, (req, res) => {
 });
 
 app.post('/api/admin/users', requireAuthAPI, requireAdmin, (req, res) => {
-  const { username, password, role = 'user', active = true, max_containers = 5 } = req.body;
+  const { username, password, role = 'user', active = true, max_containers = 5, max_volumes = 5, max_networks = 5 } = req.body;
   if (!username?.trim())  return res.status(400).json({ error: 'Username is required' });
   if (!password?.trim())  return res.status(400).json({ error: 'Password is required' });
   if (!['admin', 'user'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
   const maxC = Math.max(1, Math.min(100, parseInt(max_containers, 10) || 5));
+  const maxV = Math.max(1, Math.min(100, parseInt(max_volumes,    10) || 5));
+  const maxN = Math.max(1, Math.min(100, parseInt(max_networks,   10) || 5));
 
   try {
-    stmts.createUser.run(username.trim(), bcrypt.hashSync(password, 10), role, active ? 1 : 0, maxC);
+    stmts.createUser.run(username.trim(), bcrypt.hashSync(password, 10), role, active ? 1 : 0, maxC, maxV, maxN);
     res.status(201).json({ ok: true });
   } catch (err) {
     if (err.message.includes('UNIQUE')) return res.status(409).json({ error: 'Username already exists' });
@@ -198,7 +206,7 @@ app.post('/api/admin/users', requireAuthAPI, requireAdmin, (req, res) => {
 
 app.put('/api/admin/users/:username', requireAuthAPI, requireAdmin, (req, res) => {
   const { username } = req.params;
-  const { password, role, active, max_containers } = req.body;
+  const { password, role, active, max_containers, max_volumes, max_networks } = req.body;
 
   if (!stmts.findUser.get(username)) return res.status(404).json({ error: 'User not found' });
 
@@ -216,6 +224,14 @@ app.put('/api/admin/users/:username', requireAuthAPI, requireAdmin, (req, res) =
   if (max_containers != null) {
     const maxC = Math.max(1, Math.min(100, parseInt(max_containers, 10) || 5));
     stmts.updateMaxContainers.run(maxC, username);
+  }
+  if (max_volumes != null) {
+    const maxV = Math.max(1, Math.min(100, parseInt(max_volumes, 10) || 5));
+    stmts.updateMaxVolumes.run(maxV, username);
+  }
+  if (max_networks != null) {
+    const maxN = Math.max(1, Math.min(100, parseInt(max_networks, 10) || 5));
+    stmts.updateMaxNetworks.run(maxN, username);
   }
 
   res.json({ ok: true });
@@ -418,6 +434,14 @@ app.post('/api/volumes', requireAuthAPI, async (req, res) => {
   if (!name?.trim()) return res.status(400).json({ error: 'Volume name is required' });
   const { username } = req.session.user;
   try {
+    const dbUser  = stmts.findUser.get(username);
+    const existing = await docker.listVolumes({ filters: JSON.stringify({ label: [`${LABEL_USER}=${username}`] }) });
+    if ((existing.Volumes || []).length >= dbUser.max_volumes)
+      return res.status(429).json({ error: `Volume limit reached (${dbUser.max_volumes})` });
+  } catch (err) {
+    console.warn(`[${username}] could not check volume limit: ${err.message}`);
+  }
+  try {
     await docker.createVolume({
       Name: name.trim(),
       Labels: { [LABEL_USER]: username, 'webterminal': 'true' },
@@ -496,6 +520,14 @@ app.post('/api/networks', requireAuthAPI, async (req, res) => {
   const { name } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'Network name is required' });
   const { username } = req.session.user;
+  try {
+    const dbUser   = stmts.findUser.get(username);
+    const existing = await docker.listNetworks({ filters: JSON.stringify({ label: [`${LABEL_USER}=${username}`] }) });
+    if ((existing || []).length >= dbUser.max_networks)
+      return res.status(429).json({ error: `Network limit reached (${dbUser.max_networks})` });
+  } catch (err) {
+    console.warn(`[${username}] could not check network limit: ${err.message}`);
+  }
   try {
     await docker.createNetwork({
       Name: name.trim(),

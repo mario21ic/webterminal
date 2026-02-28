@@ -955,6 +955,7 @@
         <h2>My Networks</h2>
         <p>Bridge networks · isolate container traffic</p>
       </div>
+      <span class="counter-badge" id="network-counter" style="display:none"></span>
       <button class="new-net-btn" onclick="createNetwork()">+ New</button>
     </div>
     <input class="search-input" id="network-search" placeholder="Filter networks…" />
@@ -971,6 +972,7 @@
         <h2>My Volumes</h2>
         <p>Persistent storage · mounted at /data</p>
       </div>
+      <span class="counter-badge" id="volume-counter" style="display:none"></span>
       <button class="new-vol-btn" onclick="createVolume()">+ New</button>
     </div>
     <input class="search-input" id="volume-search" placeholder="Filter volumes…" />
@@ -1118,6 +1120,8 @@
   let selectedImage            = null;
   let currentVolumes           = [];
   let maxContainers            = null;
+  let maxVolumes               = null;
+  let maxNetworks              = null;
 
   function updateContainerCounter(count) {
     const el = document.getElementById('container-counter');
@@ -1134,6 +1138,35 @@
     } else {
       imageBtn.textContent = 'Launch Container →';
       if (selectedImage) imageBtn.disabled = false;
+    }
+  }
+
+  function updateNetworkCounter(count) {
+    const el = document.getElementById('network-counter');
+    if (!el || maxNetworks === null) return;
+    const atLimit = count >= maxNetworks;
+    el.textContent  = `${count} / ${maxNetworks}`;
+    el.className    = 'counter-badge' + (atLimit ? ' at-limit' : '');
+    el.style.display = '';
+    const newBtn = document.querySelector('#card-network .new-net-btn');
+    if (newBtn) {
+      newBtn.disabled = atLimit;
+      newBtn.title    = atLimit ? 'Network limit reached' : '';
+    }
+  }
+
+  function updateVolumeCounter(count) {
+    const el = document.getElementById('volume-counter');
+    if (!el || maxVolumes === null) return;
+    const atLimit = count >= maxVolumes;
+    el.textContent  = `${count} / ${maxVolumes}`;
+    el.className    = 'counter-badge' + (atLimit ? ' at-limit' : '');
+    el.style.display = '';
+    // Disable the + New button when at the limit
+    const newBtn = document.querySelector('#card-volume .new-vol-btn');
+    if (newBtn) {
+      newBtn.disabled = atLimit;
+      newBtn.title    = atLimit ? 'Volume limit reached' : '';
     }
   }
 
@@ -1423,6 +1456,8 @@
 
   // ── Network list ──────────────────────────────────────────────────────────
   function renderNetworks(listEl, networks) {
+    updateNetworkCounter(networks.length);
+
     // Sync the net-select dropdown in the image card
     const sel  = document.getElementById('net-select');
     const prev = sel.value;
@@ -1487,6 +1522,7 @@
   // ── Volume list ───────────────────────────────────────────────────────────
   function renderVolumes(listEl, volumes) {
     currentVolumes = volumes;
+    updateVolumeCounter(volumes.length);
 
     // Sync the vol-select dropdown in the image card
     const sel = document.getElementById('vol-select');
@@ -2053,14 +2089,22 @@
   async function loadUser() {
     const res = await apiFetch('/api/me');
     if (!res) return;
-    const { username, role, max_containers } = await res.json();
+    const { username, role, max_containers, max_volumes, max_networks } = await res.json();
     document.getElementById('username-display').textContent = username;
     document.getElementById('user-avatar').textContent      = username[0].toUpperCase();
     if (role === 'admin') document.getElementById('admin-link').style.display = 'inline-flex';
     else document.getElementById('card-local').style.display = 'none';
     maxContainers = max_containers;
+    maxVolumes    = max_volumes;
+    maxNetworks   = max_networks;
     updateContainerCounter(
       document.getElementById('container-list').querySelectorAll('.list-item').length
+    );
+    updateVolumeCounter(
+      document.getElementById('volume-list').querySelectorAll('.list-item').length
+    );
+    updateNetworkCounter(
+      document.getElementById('network-list').querySelectorAll('.list-item').length
     );
   }
 
