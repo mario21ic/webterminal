@@ -1,0 +1,1174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Web Terminal</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0d1117;
+      min-height: 100vh;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      color: #e6edf3;
+    }
+
+    /* ── Header ──────────────────────────────────────────────────────────── */
+    header {
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .brand { display: flex; align-items: center; gap: 10px; }
+    .brand-icon { font-size: 22px; }
+    .brand h1 { font-size: 18px; font-weight: 600; color: #e6edf3; }
+    .brand sub {
+      font-size: 11px;
+      color: #484f58;
+      font-weight: 400;
+      margin-left: 4px;
+    }
+
+    .refresh-btn {
+      background: #21262d;
+      color: #8b949e;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 6px 14px;
+      font-size: 13px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.15s, color 0.15s;
+    }
+    .refresh-btn:hover { background: #30363d; color: #e6edf3; }
+    .refresh-icon { display: inline-block; }
+    .refresh-btn.spinning .refresh-icon { animation: spin 0.7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .header-right { display: flex; align-items: center; gap: 10px; }
+
+    .user-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #21262d;
+      border: 1px solid #30363d;
+      border-radius: 20px;
+      padding: 4px 12px 4px 8px;
+      font-size: 13px;
+      color: #c9d1d9;
+    }
+    .user-badge .avatar {
+      width: 22px; height: 22px;
+      background: #1f6feb;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 700; color: #fff;
+      flex-shrink: 0;
+    }
+
+    .signout-btn {
+      background: transparent;
+      color: #8b949e;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 5px 10px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    .signout-btn:hover { background: #4a1c1c; color: #f85149; border-color: #f85149; }
+
+    .admin-link {
+      color: #d2a8ff;
+      text-decoration: none;
+      font-size: 12px;
+      padding: 4px 10px;
+      border: 1px solid rgba(210,168,255,.3);
+      border-radius: 6px;
+      background: rgba(210,168,255,.08);
+      transition: background .15s;
+      display: none;
+    }
+    .admin-link:hover { background: rgba(210,168,255,.18); }
+
+    /* ── Main grid ───────────────────────────────────────────────────────── */
+    main {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 20px;
+      padding: 32px 24px;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    /* ── Cards ───────────────────────────────────────────────────────────── */
+    .card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-top: 3px solid var(--accent);
+      border-radius: 10px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      transition: box-shadow 0.2s;
+    }
+    .card:hover { box-shadow: 0 4px 24px rgba(0,0,0,0.5); }
+
+    #card-local     { --accent: #58a6ff; }
+    #card-container { --accent: #3fb950; }
+    #card-image     { --accent: #d2a8ff; }
+    #card-volume    { --accent: #f0883e; }
+    #card-volume .list-item.selected { background: rgba(240,136,62,.12); border-left-color: #f0883e; }
+    #card-volume    .search-input:focus { border-color: #f0883e; }
+    #card-network   { --accent: #39c5cf; }
+    #card-network .list-item.selected { background: rgba(57,197,207,.12); border-left-color: #39c5cf; }
+    #card-network   .search-input:focus { border-color: #39c5cf; }
+
+    .card-top { display: flex; align-items: center; gap: 12px; }
+    .card-icon { font-size: 30px; flex-shrink: 0; }
+    .card-top h2 { font-size: 16px; font-weight: 600; color: #e6edf3; }
+    .card-top p  { font-size: 12px; color: #8b949e; margin-top: 3px; }
+
+    /* ── Search input ─────────────────────────────────────────────────────  */
+    .search-input {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      color: #c9d1d9;
+      font-size: 13px;
+      padding: 6px 10px;
+      outline: none;
+      width: 100%;
+      transition: border-color 0.15s;
+    }
+    .search-input::placeholder { color: #484f58; }
+    #card-local     .search-input:focus { border-color: #58a6ff; }
+    #card-container .search-input:focus { border-color: #3fb950; }
+    #card-image     .search-input:focus { border-color: #d2a8ff; }
+
+    /* ── List boxes ───────────────────────────────────────────────────────── */
+    .list-box {
+      flex: 1;
+      min-height: 160px;
+      max-height: 220px;
+      overflow-y: auto;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      scrollbar-width: thin;
+      scrollbar-color: #30363d transparent;
+    }
+
+    .list-placeholder {
+      padding: 20px 16px;
+      text-align: center;
+      color: #484f58;
+      font-size: 13px;
+    }
+
+    .list-item {
+      padding: 8px 12px;
+      cursor: pointer;
+      border-bottom: 1px solid #161b22;
+      transition: background 0.1s;
+      border-left: 2px solid transparent;
+    }
+    .list-item:last-child { border-bottom: none; }
+    .list-item:hover { background: #21262d; }
+
+    #card-local     .list-item.selected { background: rgba(88,166,255,.12); border-left-color: #58a6ff; }
+    #card-container .list-item.selected { background: rgba(63,185,80,.12);  border-left-color: #3fb950; }
+    #card-image     .list-item.selected { background: rgba(210,168,255,.12);border-left-color: #d2a8ff; }
+
+    .item-name {
+      font-size: 13px;
+      color: #c9d1d9;
+      font-family: 'Cascadia Code','Fira Code','JetBrains Mono',monospace;
+    }
+    .item-meta {
+      font-size: 11px;
+      color: #484f58;
+      margin-top: 2px;
+    }
+
+    /* ── Local shell description box ──────────────────────────────────────── */
+    .local-desc {
+      flex: 1;
+      min-height: 160px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #0d1117;
+      border: 1px dashed #30363d;
+      border-radius: 6px;
+      color: #484f58;
+      font-size: 13px;
+      text-align: center;
+      padding: 20px;
+      line-height: 1.6;
+    }
+
+    /* ── Container-specific list items ───────────────────────────────────── */
+    .item-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .item-content { flex: 1; min-width: 0; }
+
+    .status-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      display: inline-block;
+      flex-shrink: 0;
+      margin-right: 3px;
+      vertical-align: middle;
+    }
+    .status-dot.running { background: #3fb950; box-shadow: 0 0 4px #3fb95088; }
+    .status-dot.stopped { background: #484f58; }
+
+    .item-remove {
+      background: transparent;
+      border: 1px solid transparent;
+      color: #484f58;
+      cursor: pointer;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-size: 13px;
+      line-height: 1;
+      flex-shrink: 0;
+      transition: color .15s, background .15s, border-color .15s;
+    }
+    .item-remove:hover { color: #f85149; background: rgba(248,81,73,.1); border-color: rgba(248,81,73,.3); }
+
+    .item-stop {
+      background: transparent;
+      border: 1px solid transparent;
+      color: #484f58;
+      cursor: pointer;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 500;
+      line-height: 1.4;
+      flex-shrink: 0;
+      white-space: nowrap;
+      transition: color .15s, background .15s, border-color .15s;
+    }
+    .item-stop:hover  { color: #f0883e; background: rgba(240,136,62,.1); border-color: rgba(240,136,62,.3); }
+
+    .item-start {
+      background: transparent;
+      border: 1px solid transparent;
+      color: #484f58;
+      cursor: pointer;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 500;
+      line-height: 1.4;
+      flex-shrink: 0;
+      white-space: nowrap;
+      transition: color .15s, background .15s, border-color .15s;
+    }
+    .item-start:hover { color: #3fb950; background: rgba(63,185,80,.1); border-color: rgba(63,185,80,.3); }
+
+    /* ── New volume / network buttons ────────────────────────────────────── */
+    .new-vol-btn {
+      margin-left: auto;
+      background: transparent;
+      border: 1px solid rgba(240,136,62,.35);
+      color: #f0883e;
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background .15s;
+    }
+    .new-vol-btn:hover { background: rgba(240,136,62,.12); }
+
+    .new-net-btn {
+      margin-left: auto;
+      background: transparent;
+      border: 1px solid rgba(57,197,207,.35);
+      color: #39c5cf;
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background .15s;
+    }
+    .new-net-btn:hover { background: rgba(57,197,207,.12); }
+
+    /* ── Volume mount selector (inside image card) ────────────────────────── */
+    .vol-select {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      color: #c9d1d9;
+      font-size: 13px;
+      padding: 6px 10px;
+      outline: none;
+      width: 100%;
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    .vol-select:focus { border-color: #d2a8ff; }
+    .vol-select option { background: #161b22; }
+    .net-select { border-color: #30363d; }
+    .net-select:focus { border-color: #39c5cf; }
+    .net-select option { background: #161b22; }
+    .vol-label {
+      font-size: 11px;
+      color: #484f58;
+      margin-bottom: -4px;
+    }
+
+    .sub-header {
+      padding: 5px 12px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #484f58;
+      background: #0d1117;
+      border-bottom: 1px solid #161b22;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+    .count-badge {
+      background: #21262d;
+      color: #8b949e;
+      border-radius: 8px;
+      padding: 1px 6px;
+      font-size: 10px;
+    }
+
+    .item-info {
+      background: transparent;
+      border: 1px solid transparent;
+      color: #484f58;
+      cursor: pointer;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-size: 13px;
+      line-height: 1;
+      flex-shrink: 0;
+      transition: color .15s, background .15s, border-color .15s;
+    }
+    .item-info:hover { color: #58a6ff; background: rgba(88,166,255,.1); border-color: rgba(88,166,255,.3); }
+
+    /* ── Container details modal ──────────────────────────────────────────── */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.65);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+      padding: 20px;
+    }
+    .modal-backdrop.hidden { display: none; }
+
+    .modal {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 10px;
+      width: 100%;
+      max-width: 520px;
+      max-height: 82vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 16px 48px rgba(0,0,0,.6);
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 18px;
+      border-bottom: 1px solid #30363d;
+      flex-shrink: 0;
+    }
+    .modal-header h3 {
+      flex: 1;
+      font-size: 14px;
+      font-weight: 600;
+      color: #e6edf3;
+      font-family: 'Cascadia Code','Fira Code','JetBrains Mono',monospace;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .modal-close {
+      background: transparent;
+      border: none;
+      color: #8b949e;
+      cursor: pointer;
+      font-size: 18px;
+      line-height: 1;
+      padding: 2px 6px;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+    .modal-close:hover { color: #e6edf3; background: #21262d; }
+
+    .modal-body {
+      overflow-y: auto;
+      padding: 16px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      scrollbar-width: thin;
+      scrollbar-color: #30363d transparent;
+    }
+
+    .detail-section h4 {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: #484f58;
+      margin-bottom: 8px;
+    }
+    .detail-table { width: 100%; border-collapse: collapse; }
+    .detail-table td {
+      padding: 4px 0;
+      font-size: 12px;
+      vertical-align: top;
+    }
+    .detail-table td:first-child {
+      color: #8b949e;
+      width: 90px;
+      padding-right: 12px;
+      white-space: nowrap;
+    }
+    .detail-table td:last-child {
+      color: #c9d1d9;
+      font-family: 'Cascadia Code','Fira Code','JetBrains Mono',monospace;
+      word-break: break-all;
+    }
+    .detail-block {
+      background: #0d1117;
+      border: 1px solid #21262d;
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin-bottom: 6px;
+    }
+    .detail-block:last-child { margin-bottom: 0; }
+    .detail-badge {
+      display: inline-block;
+      background: #21262d;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      padding: 2px 7px;
+      font-size: 11px;
+      color: #8b949e;
+      font-family: 'Cascadia Code','Fira Code','JetBrains Mono',monospace;
+      margin: 2px 3px 2px 0;
+    }
+    .detail-empty { color: #484f58; font-size: 12px; }
+
+    /* ── Remove-all button inside card-top ────────────────────────────────── */
+    .remove-all-btn {
+      margin-left: auto;
+      background: transparent;
+      border: 1px solid rgba(248,81,73,.35);
+      color: #f85149;
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background .15s;
+      display: none;
+    }
+    .remove-all-btn:hover { background: rgba(248,81,73,.12); }
+
+    /* ── Resource limit inputs ────────────────────────────────────────────── */
+    .resource-row {
+      display: flex;
+      gap: 10px;
+    }
+    .resource-field {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .resource-input-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+    .resource-input {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      color: #c9d1d9;
+      font-size: 13px;
+      padding: 6px 34px 6px 10px;
+      outline: none;
+      width: 100%;
+      -moz-appearance: textfield;
+      transition: border-color 0.15s;
+    }
+    .resource-input::-webkit-inner-spin-button,
+    .resource-input::-webkit-outer-spin-button { opacity: 1; }
+    #card-image .resource-input:focus { border-color: #d2a8ff; }
+    .resource-unit {
+      position: absolute;
+      right: 8px;
+      font-size: 11px;
+      color: #484f58;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+
+    /* ── Launch buttons ───────────────────────────────────────────────────── */
+    .launch-btn {
+      background: var(--accent);
+      color: #0d1117;
+      border: none;
+      border-radius: 8px;
+      padding: 11px 18px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      width: 100%;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    .launch-btn:hover:not(:disabled) {
+      opacity: 0.85;
+      transform: translateY(-1px);
+    }
+    .launch-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <span class="brand-icon">⬡</span>
+    <h1>Web Terminal<sub>choose your session</sub></h1>
+  </div>
+  <div class="header-right">
+    <a href="/admin" class="admin-link" id="admin-link">⚙ Admin</a>
+    <button class="refresh-btn" id="refresh-btn">
+      <span class="refresh-icon">↻</span> Refresh
+    </button>
+    <div class="user-badge">
+      <div class="avatar" id="user-avatar">?</div>
+      <span id="username-display">…</span>
+    </div>
+    <button class="signout-btn" id="signout-btn">Sign Out</button>
+  </div>
+</header>
+
+<main>
+
+  <!-- ── Card 1: Local Shell ─────────────────────────────────────────────── -->
+  <div class="card" id="card-local">
+    <div class="card-top">
+      <span class="card-icon">🖥</span>
+      <div>
+        <h2>Local Shell</h2>
+        <p>Run a shell session on this host</p>
+      </div>
+    </div>
+    <div class="local-desc">
+      Opens a bash / sh session<br>directly on the host machine
+    </div>
+    <button class="launch-btn" onclick="go('local')">Launch Shell →</button>
+  </div>
+
+  <!-- ── Card 2: My Containers ─────────────────────────────────────────── -->
+  <div class="card" id="card-container">
+    <div class="card-top">
+      <span class="card-icon">📦</span>
+      <div>
+        <h2>My Containers</h2>
+        <p>Connect · stop · remove containers</p>
+      </div>
+      <button class="remove-all-btn" id="remove-all-btn" onclick="removeAllContainers()">
+        ✕ Remove All
+      </button>
+    </div>
+    <input class="search-input" id="container-search" placeholder="Filter containers…" />
+    <div class="list-box" id="container-list">
+      <div class="list-placeholder">Loading…</div>
+    </div>
+    <button class="launch-btn" id="container-btn" disabled onclick="go('container')">
+      Connect →
+    </button>
+  </div>
+
+  <!-- ── Card 3: Docker Image ────────────────────────────────────────────── -->
+  <div class="card" id="card-image">
+    <div class="card-top">
+      <span class="card-icon">🐳</span>
+      <div>
+        <h2>Docker Image</h2>
+        <p>Launch an ephemeral container</p>
+      </div>
+    </div>
+    <input class="search-input" id="image-search" placeholder="Filter images…" />
+    <div class="list-box" id="image-list">
+      <div class="list-placeholder">Loading…</div>
+    </div>
+    <p class="vol-label">Mount volume at /data (optional)</p>
+    <select class="vol-select" id="vol-select">
+      <option value="">— none —</option>
+    </select>
+    <p class="vol-label">Connect to network (optional)</p>
+    <select class="vol-select net-select" id="net-select">
+      <option value="">— none —</option>
+    </select>
+    <div class="resource-row">
+      <div class="resource-field">
+        <p class="vol-label">Memory limit</p>
+        <div class="resource-input-wrap">
+          <input type="number" id="mem-input" class="resource-input"
+                 value="512" min="64" max="8192" step="64">
+          <span class="resource-unit">MB</span>
+        </div>
+      </div>
+      <div class="resource-field">
+        <p class="vol-label">CPU limit</p>
+        <div class="resource-input-wrap">
+          <input type="number" id="cpu-input" class="resource-input"
+                 value="1" min="0.1" max="8" step="0.1">
+          <span class="resource-unit">CPUs</span>
+        </div>
+      </div>
+    </div>
+    <button class="launch-btn" id="image-btn" disabled onclick="go('image')">
+      Launch Container →
+    </button>
+  </div>
+
+  <!-- ── Card 5: My Networks ─────────────────────────────────────────────── -->
+  <div class="card" id="card-network">
+    <div class="card-top">
+      <span class="card-icon">🌐</span>
+      <div>
+        <h2>My Networks</h2>
+        <p>Bridge networks · isolate container traffic</p>
+      </div>
+      <button class="new-net-btn" onclick="createNetwork()">+ New</button>
+    </div>
+    <input class="search-input" id="network-search" placeholder="Filter networks…" />
+    <div class="list-box" id="network-list">
+      <div class="list-placeholder">Loading…</div>
+    </div>
+  </div>
+
+  <!-- ── Card 4: My Volumes ──────────────────────────────────────────────── -->
+  <div class="card" id="card-volume">
+    <div class="card-top">
+      <span class="card-icon">💾</span>
+      <div>
+        <h2>My Volumes</h2>
+        <p>Persistent storage · mounted at /data</p>
+      </div>
+      <button class="new-vol-btn" onclick="createVolume()">+ New</button>
+    </div>
+    <input class="search-input" id="volume-search" placeholder="Filter volumes…" />
+    <div class="list-box" id="volume-list">
+      <div class="list-placeholder">Loading…</div>
+    </div>
+  </div>
+
+</main>
+
+<!-- ── Container details modal ──────────────────────────────────────────── -->
+<div class="modal-backdrop hidden" id="container-modal"
+     onclick="if(event.target===this)closeDetails()">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="status-dot" id="modal-dot"></span>
+      <h3 id="modal-title">Container Details</h3>
+      <button class="modal-close" onclick="closeDetails()">✕</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<script>
+  let selectedContainer        = null;
+  let selectedContainerRunning = false;
+  let selectedImage            = null;
+  let currentVolumes           = [];
+
+  // ── Auth-aware fetch ──────────────────────────────────────────────────────
+  async function apiFetch(url, opts = {}) {
+    const res = await fetch(url, opts);
+    if (res.status === 401) { window.location.href = '/login'; return null; }
+    return res;
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  function formatSize(bytes) {
+    if (!bytes) return '';
+    if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
+    return `${Math.round(bytes / 1e6)} MB`;
+  }
+
+  function setupFilter(inputId, listId) {
+    document.getElementById(inputId).addEventListener('input', function () {
+      const q = this.value.toLowerCase();
+      document.getElementById(listId).querySelectorAll('.list-item').forEach(el => {
+        el.style.display = el.dataset.search.includes(q) ? '' : 'none';
+      });
+    });
+  }
+
+  // ── Container list (split into Running / Stopped sub-sections) ───────────
+  function renderContainerItem(c) {
+    const running = c.state === 'running';
+    const search  = `${c.name} ${c.image} ${c.status}`.toLowerCase();
+    return `
+      <div class="list-item" data-value="${c.id}" data-running="${running}"
+           data-search="${search}">
+        <div class="item-row">
+          <div class="item-content" onclick="selectContainer(this.closest('.list-item'))">
+            <div class="item-name">
+              <span class="status-dot ${running ? 'running' : 'stopped'}"></span>${c.name}
+            </div>
+            <div class="item-meta">${c.image} · ${c.status}</div>
+          </div>
+          <button class="item-info" title="Container details"
+            onclick="showContainerDetails(event,'${c.id}')">ⓘ</button>
+          ${running
+            ? `<button class="item-stop"  title="Stop container"  onclick="stopContainer(event,'${c.id}')">■ Stop</button>`
+            : `<button class="item-start" title="Start container" onclick="startContainer(event,'${c.id}')">▶ Start</button>`}
+          <button class="item-remove" title="Force-remove container"
+            onclick="removeContainer(event,'${c.id}')">✕</button>
+        </div>
+      </div>`;
+  }
+
+  function renderSubSection(title, items) {
+    if (items.length === 0) return '';
+    return `
+      <div class="sub-section">
+        <div class="sub-header">${title} <span class="count-badge">${items.length}</span></div>
+        ${items.map(renderContainerItem).join('')}
+      </div>`;
+  }
+
+  function renderContainers(listEl, containers) {
+    selectedContainer        = null;
+    selectedContainerRunning = false;
+    document.getElementById('container-btn').disabled       = true;
+    document.getElementById('remove-all-btn').style.display = 'none';
+
+    if (containers.length === 0) {
+      listEl.innerHTML = '<div class="list-placeholder">No containers</div>';
+      return;
+    }
+
+    document.getElementById('remove-all-btn').style.display = 'inline-block';
+
+    const running = containers.filter(c => c.state === 'running');
+    const stopped = containers.filter(c => c.state !== 'running');
+
+    listEl.innerHTML = renderSubSection('Running', running) +
+                       renderSubSection('Stopped', stopped);
+
+    // Auto-select first running; fall back to first stopped
+    const first = listEl.querySelector('.list-item');
+    if (first) selectContainer(first);
+  }
+
+  function selectContainer(el) {
+    el.closest('.list-box').querySelectorAll('.list-item')
+      .forEach(i => i.classList.remove('selected'));
+    el.classList.add('selected');
+    selectedContainer        = el.dataset.value;
+    selectedContainerRunning = el.dataset.running === 'true';
+    // "Connect" only available for running containers
+    document.getElementById('container-btn').disabled = !selectedContainerRunning;
+  }
+
+  // ── Image list (generic) ──────────────────────────────────────────────────
+  function renderImages(listEl, images) {
+    selectedImage = null;
+    document.getElementById('image-btn').disabled = true;
+
+    if (images.length === 0) {
+      listEl.innerHTML = '<div class="list-placeholder">None available</div>';
+      return;
+    }
+
+    listEl.innerHTML = images.map(img => `
+      <div class="list-item" data-value="${img.tag}"
+           data-search="${img.tag.toLowerCase()}">
+        <div class="item-name">${img.tag}</div>
+        ${img.size ? `<div class="item-meta">${formatSize(img.size)}</div>` : ''}
+      </div>
+    `).join('');
+
+    listEl.querySelectorAll('.list-item').forEach(el => {
+      el.addEventListener('click', () => {
+        listEl.querySelectorAll('.list-item').forEach(i => i.classList.remove('selected'));
+        el.classList.add('selected');
+        selectedImage = el.dataset.value;
+        document.getElementById('image-btn').disabled = false;
+      });
+    });
+
+    // Auto-select first
+    const first = listEl.querySelector('.list-item');
+    if (first) first.click();
+  }
+
+  // ── Data loading ──────────────────────────────────────────────────────────
+  async function loadContainersAuth() {
+    const listEl = document.getElementById('container-list');
+    const res = await apiFetch('/api/containers');
+    if (!res) return;
+    try {
+      renderContainers(listEl, await res.json());
+    } catch {
+      listEl.innerHTML = '<div class="list-placeholder">Failed to load</div>';
+    }
+  }
+
+  async function loadImagesAuth() {
+    const listEl = document.getElementById('image-list');
+    const res = await apiFetch('/api/images');
+    if (!res) return;
+    try {
+      renderImages(listEl, await res.json());
+    } catch {
+      listEl.innerHTML = '<div class="list-placeholder">Failed to load</div>';
+    }
+  }
+
+  async function loadAllAuth() {
+    const btn = document.getElementById('refresh-btn');
+    btn.classList.add('spinning');
+    await Promise.all([loadContainersAuth(), loadImagesAuth(), loadVolumes(), loadNetworks()]);
+    btn.classList.remove('spinning');
+  }
+
+  // ── Container details modal ───────────────────────────────────────────────
+  function closeDetails() {
+    document.getElementById('container-modal').classList.add('hidden');
+  }
+
+  async function showContainerDetails(event, id) {
+    event.stopPropagation();
+    const modal = document.getElementById('container-modal');
+    const body  = document.getElementById('modal-body');
+    document.getElementById('modal-title').textContent = 'Loading…';
+    document.getElementById('modal-dot').className     = 'status-dot';
+    body.innerHTML = '<div style="color:#484f58;text-align:center;padding:32px 0">Loading…</div>';
+    modal.classList.remove('hidden');
+
+    const res = await apiFetch(`/api/containers/${encodeURIComponent(id)}`);
+    if (!res) return;
+    const d = await res.json();
+    if (d.error) {
+      body.innerHTML = `<div style="color:#f85149;padding:8px">${d.error}</div>`;
+      return;
+    }
+
+    document.getElementById('modal-title').textContent    = d.name;
+    document.getElementById('modal-dot').className        = `status-dot ${d.status === 'running' ? 'running' : 'stopped'}`;
+
+    const fmt = iso => iso && iso !== '0001-01-01T00:00:00Z'
+      ? new Date(iso).toLocaleString() : '—';
+
+    const networksHtml = d.networks.length === 0
+      ? '<span class="detail-empty">none</span>'
+      : d.networks.map(n => `
+          <div class="detail-block">
+            <table class="detail-table">
+              <tr><td>Name</td>   <td>${n.name}</td></tr>
+              <tr><td>IP</td>     <td>${n.ip}</td></tr>
+              <tr><td>Gateway</td><td>${n.gateway}</td></tr>
+              <tr><td>MAC</td>    <td>${n.mac}</td></tr>
+            </table>
+          </div>`).join('');
+
+    const mountsHtml = d.mounts.length === 0
+      ? '<span class="detail-empty">none</span>'
+      : d.mounts.map(m => `
+          <div class="detail-block">
+            <table class="detail-table">
+              <tr><td>Type</td>  <td>${m.type}</td></tr>
+              ${m.name ? `<tr><td>Name</td><td>${m.name}</td></tr>` : ''}
+              <tr><td>Target</td><td>${m.destination}</td></tr>
+              <tr><td>Mode</td>  <td>${m.mode}</td></tr>
+            </table>
+          </div>`).join('');
+
+    const portsHtml = d.ports.length === 0
+      ? '<span class="detail-empty">none</span>'
+      : d.ports.map(p => `<span class="detail-badge">${p}</span>`).join('');
+
+    body.innerHTML = `
+      <div class="detail-section">
+        <h4>General</h4>
+        <table class="detail-table">
+          <tr><td>ID</td>      <td>${d.id}</td></tr>
+          <tr><td>Image</td>   <td>${d.image}</td></tr>
+          <tr><td>Status</td>  <td>${d.status}</td></tr>
+          <tr><td>Command</td> <td>${d.cmd || '—'}</td></tr>
+          <tr><td>Created</td> <td>${fmt(d.created)}</td></tr>
+          <tr><td>Started</td> <td>${fmt(d.started)}</td></tr>
+          ${d.status !== 'running' ? `<tr><td>Finished</td><td>${fmt(d.finished)}</td></tr>` : ''}
+        </table>
+      </div>
+      <div class="detail-section">
+        <h4>Ports</h4>
+        ${portsHtml}
+      </div>
+      <div class="detail-section">
+        <h4>Networks</h4>
+        ${networksHtml}
+      </div>
+      <div class="detail-section">
+        <h4>Mounts</h4>
+        ${mountsHtml}
+      </div>`;
+  }
+
+  // Close modal on Escape key
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeDetails();
+  });
+
+  // ── Container stop / remove actions ──────────────────────────────────────
+  async function startContainer(event, id) {
+    event.stopPropagation();
+    const res = await apiFetch(`/api/containers/${encodeURIComponent(id)}/start`, { method: 'POST' });
+    if (res?.ok) loadContainersAuth();
+    else if (res) { const d = await res.json(); alert(d.error || 'Failed to start'); }
+  }
+
+  async function stopContainer(event, id) {
+    event.stopPropagation();
+    const res = await apiFetch(`/api/containers/${encodeURIComponent(id)}/stop`, { method: 'POST' });
+    if (res?.ok) loadContainersAuth();
+    else if (res) { const d = await res.json(); alert(d.error || 'Failed to stop'); }
+  }
+
+  async function removeContainer(event, id) {
+    event.stopPropagation();
+    const res = await apiFetch(`/api/containers/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    if (res?.ok) loadContainersAuth();
+    else if (res) { const d = await res.json(); alert(d.error || 'Failed to remove'); }
+  }
+
+  async function removeAllContainers() {
+    if (!confirm('Force-remove ALL your containers?\nRunning ones will be stopped first.')) return;
+    const res = await apiFetch('/api/containers', { method: 'DELETE' });
+    if (res?.ok) loadContainersAuth();
+    else if (res) { const d = await res.json(); alert(d.error || 'Failed to remove all'); }
+  }
+
+  // ── Network list ──────────────────────────────────────────────────────────
+  function renderNetworks(listEl, networks) {
+    // Sync the net-select dropdown in the image card
+    const sel  = document.getElementById('net-select');
+    const prev = sel.value;
+    sel.innerHTML = '<option value="">— none —</option>' +
+      networks.map(n => `<option value="${n.name}">${n.name}</option>`).join('');
+    if (networks.some(n => n.name === prev)) sel.value = prev;
+
+    if (networks.length === 0) {
+      listEl.innerHTML = '<div class="list-placeholder">No networks · click + New to create one</div>';
+      return;
+    }
+
+    listEl.innerHTML = networks.map(n => {
+      const date = n.created ? new Date(n.created).toLocaleDateString() : '';
+      return `
+        <div class="list-item" data-value="${n.name}" data-search="${n.name.toLowerCase()}">
+          <div class="item-row">
+            <div class="item-content">
+              <div class="item-name">🌐 ${n.name}</div>
+              <div class="item-meta">bridge · ${n.id}${date ? ` · created ${date}` : ''}</div>
+            </div>
+            <button class="item-remove" title="Remove network"
+              onclick="removeNetwork(event,'${n.name}')">✕</button>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  async function loadNetworks() {
+    const listEl = document.getElementById('network-list');
+    const res = await apiFetch('/api/networks');
+    if (!res) return;
+    try {
+      renderNetworks(listEl, await res.json());
+    } catch {
+      listEl.innerHTML = '<div class="list-placeholder">Failed to load</div>';
+    }
+  }
+
+  async function createNetwork() {
+    const name = prompt('Network name:');
+    if (!name?.trim()) return;
+    const res = await apiFetch('/api/networks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name.trim() }),
+    });
+    if (res?.ok) loadNetworks();
+    else if (res) { const d = await res.json(); alert(d.error || 'Failed to create network'); }
+  }
+
+  async function removeNetwork(event, name) {
+    event.stopPropagation();
+    if (!confirm(`Remove network "${name}"?\nContainers using it will lose connectivity.`)) return;
+    const res = await apiFetch(`/api/networks/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    if (res?.ok) loadNetworks();
+    else if (res) { const d = await res.json(); alert(d.error || 'Failed to remove network'); }
+  }
+
+  // ── Volume list ───────────────────────────────────────────────────────────
+  function renderVolumes(listEl, volumes) {
+    currentVolumes = volumes;
+
+    // Sync the vol-select dropdown in the image card
+    const sel = document.getElementById('vol-select');
+    const prev = sel.value;
+    sel.innerHTML = '<option value="">— none —</option>' +
+      volumes.map(v => `<option value="${v.name}">${v.name}</option>`).join('');
+    if (volumes.some(v => v.name === prev)) sel.value = prev;
+
+    if (volumes.length === 0) {
+      listEl.innerHTML = '<div class="list-placeholder">No volumes · click + New to create one</div>';
+      return;
+    }
+
+    listEl.innerHTML = volumes.map(v => {
+      const date = v.created ? new Date(v.created).toLocaleDateString() : '';
+      return `
+        <div class="list-item" data-value="${v.name}" data-search="${v.name.toLowerCase()}">
+          <div class="item-row">
+            <div class="item-content">
+              <div class="item-name">💾 ${v.name}</div>
+              ${date ? `<div class="item-meta">created ${date}</div>` : ''}
+            </div>
+            <button class="item-remove" title="Remove volume"
+              onclick="removeVolume(event,'${v.name}')">✕</button>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  async function loadVolumes() {
+    const listEl = document.getElementById('volume-list');
+    const res = await apiFetch('/api/volumes');
+    if (!res) return;
+    try {
+      renderVolumes(listEl, await res.json());
+    } catch {
+      listEl.innerHTML = '<div class="list-placeholder">Failed to load</div>';
+    }
+  }
+
+  async function createVolume() {
+    const name = prompt('Volume name:');
+    if (!name?.trim()) return;
+    const res = await apiFetch('/api/volumes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name.trim() }),
+    });
+    if (res?.ok) loadVolumes();
+    else if (res) { const d = await res.json(); alert(d.error || 'Failed to create volume'); }
+  }
+
+  async function removeVolume(event, name) {
+    event.stopPropagation();
+    if (!confirm(`Remove volume "${name}"?\nThis permanently deletes all its data.`)) return;
+    const res = await apiFetch(`/api/volumes/${encodeURIComponent(name)}`, { method: 'DELETE' });
+    if (res?.ok) loadVolumes();
+    else if (res) { const d = await res.json(); alert(d.error || 'Failed to remove volume'); }
+  }
+
+  // ── Navigation ────────────────────────────────────────────────────────────
+  function go(type) {
+    if (type === 'local') {
+      window.location.href = '/terminal.html';
+    } else if (type === 'container' && selectedContainer && selectedContainerRunning) {
+      window.location.href = `/terminal.html?container=${encodeURIComponent(selectedContainer)}`;
+    } else if (type === 'image' && selectedImage) {
+      const vol = document.getElementById('vol-select').value;
+      const net = document.getElementById('net-select').value;
+      const mem = document.getElementById('mem-input').value || '512';
+      const cpu = document.getElementById('cpu-input').value || '1';
+      let url = `/terminal.html?image=${encodeURIComponent(selectedImage)}`;
+      if (vol) url += `&volume=${encodeURIComponent(vol)}`;
+      if (net) url += `&network=${encodeURIComponent(net)}`;
+      url += `&mem=${encodeURIComponent(mem)}&cpu=${encodeURIComponent(cpu)}`;
+      window.location.href = url;
+    }
+  }
+
+  // ── User info + sign out ──────────────────────────────────────────────────
+  async function loadUser() {
+    const res = await apiFetch('/api/me');
+    if (!res) return;
+    const { username, role } = await res.json();
+    document.getElementById('username-display').textContent = username;
+    document.getElementById('user-avatar').textContent      = username[0].toUpperCase();
+    if (role === 'admin') document.getElementById('admin-link').style.display = 'inline-flex';
+    else document.getElementById('card-local').style.display = 'none';
+  }
+
+  document.getElementById('signout-btn').addEventListener('click', async () => {
+    await fetch('/api/logout', { method: 'POST' });
+    window.location.href = '/login';
+  });
+
+  // ── Init ──────────────────────────────────────────────────────────────────
+  // Container filter: also hide sub-section headers when all items are filtered out
+  document.getElementById('container-search').addEventListener('input', function () {
+    const q = this.value.toLowerCase();
+    const listEl = document.getElementById('container-list');
+    listEl.querySelectorAll('.list-item').forEach(el => {
+      el.style.display = el.dataset.search.includes(q) ? '' : 'none';
+    });
+    listEl.querySelectorAll('.sub-section').forEach(section => {
+      const hasVisible = [...section.querySelectorAll('.list-item')]
+        .some(el => el.style.display !== 'none');
+      section.style.display = hasVisible ? '' : 'none';
+    });
+  });
+  setupFilter('image-search',   'image-list');
+  setupFilter('volume-search',  'volume-list');
+  setupFilter('network-search', 'network-list');
+  document.getElementById('refresh-btn').addEventListener('click', loadAllAuth);
+  loadUser();
+  loadAllAuth();
+</script>
+</body>
+</html>

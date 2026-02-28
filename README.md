@@ -1,2 +1,2 @@
-# webterminal
-A web terminal based on docker containers
+admin changeme
+

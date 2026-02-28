@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign In — Web Terminal</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0d1117;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      color: #e6edf3;
+    }
+
+    .login-card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      padding: 40px 36px;
+      width: 100%;
+      max-width: 360px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+    }
+
+    .logo {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+    .logo-icon {
+      font-size: 38px;
+      display: block;
+      margin-bottom: 10px;
+    }
+    .logo h1 {
+      font-size: 20px;
+      font-weight: 600;
+      color: #e6edf3;
+    }
+    .logo p {
+      font-size: 13px;
+      color: #8b949e;
+      margin-top: 4px;
+    }
+
+    .form-group { margin-bottom: 16px; }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: #c9d1d9;
+      margin-bottom: 6px;
+    }
+
+    input[type="text"],
+    input[type="password"] {
+      width: 100%;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      color: #e6edf3;
+      font-size: 14px;
+      padding: 8px 12px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input:focus { border-color: #58a6ff; box-shadow: 0 0 0 3px rgba(88,166,255,.15); }
+
+    .error-msg {
+      background: rgba(248,81,73,.1);
+      border: 1px solid rgba(248,81,73,.4);
+      border-radius: 6px;
+      color: #f85149;
+      font-size: 13px;
+      padding: 8px 12px;
+      margin-bottom: 16px;
+    }
+
+    .submit-btn {
+      width: 100%;
+      background: #238636;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 4px;
+      transition: background 0.15s, opacity 0.15s;
+    }
+    .submit-btn:hover:not(:disabled) { background: #2ea043; }
+    .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <div class="login-card">
+    <div class="logo">
+      <span class="logo-icon">⬡</span>
+      <h1>Web Terminal</h1>
+      <p>Sign in to continue</p>
+    </div>
+
+    <form id="login-form">
+      <div class="form-group">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username"
+               autocomplete="username" required autofocus />
+      </div>
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password"
+               autocomplete="current-password" required />
+      </div>
+
+      <div class="error-msg" id="error-msg" style="display:none"></div>
+
+      <button type="submit" class="submit-btn" id="submit-btn">Sign In →</button>
+    </form>
+  </div>
+
+  <script>
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+      const errorEl  = document.getElementById('error-msg');
+      const btn      = document.getElementById('submit-btn');
+
+      btn.disabled    = true;
+      btn.textContent = 'Signing in…';
+      errorEl.style.display = 'none';
+
+      try {
+        const res = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password }),
+        });
+        if (res.ok) {
+          window.location.href = '/';
+        } else {
+          const data = await res.json();
+          errorEl.textContent   = data.error || 'Invalid credentials';
+          errorEl.style.display = 'block';
+          btn.disabled    = false;
+          btn.textContent = 'Sign In →';
+        }
+      } catch {
+        errorEl.textContent   = 'Connection error. Please try again.';
+        errorEl.style.display = 'block';
+        btn.disabled    = false;
+        btn.textContent = 'Sign In →';
+      }
+    });
+  </script>
+</body>
+</html>

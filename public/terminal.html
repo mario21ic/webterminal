@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Terminal</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0d1117;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      color: #e0e0e0;
+    }
+
+    /* ── Header ──────────────────────────────────────────────────────────── */
+    header {
+      background: #161b22;
+      padding: 8px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-bottom: 1px solid #30363d;
+      flex-shrink: 0;
+    }
+
+    .back-btn {
+      color: #8b949e;
+      text-decoration: none;
+      font-size: 18px;
+      line-height: 1;
+      padding: 2px 6px;
+      border-radius: 4px;
+      transition: color 0.15s, background 0.15s;
+    }
+    .back-btn:hover { color: #e6edf3; background: #21262d; }
+
+    .traffic-lights { display: flex; gap: 6px; }
+    .traffic-lights span {
+      width: 12px; height: 12px;
+      border-radius: 50%; display: inline-block;
+    }
+    .tl-red    { background: #ff5f57; }
+    .tl-yellow { background: #ffbd2e; }
+    .tl-green  { background: #28ca41; }
+
+    .session-info {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .session-icon  { font-size: 15px; }
+    .session-title {
+      font-size: 13px;
+      font-weight: 500;
+      color: #a0aec0;
+      font-family: 'Cascadia Code','Fira Code','JetBrains Mono',monospace;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 400px;
+    }
+
+    /* ── User badge ───────────────────────────────────────────────────────── */
+    .user-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: #21262d;
+      border: 1px solid #30363d;
+      border-radius: 20px;
+      padding: 3px 10px 3px 6px;
+      font-size: 12px;
+      color: #8b949e;
+    }
+    .user-badge .avatar {
+      width: 20px; height: 20px;
+      background: #1f6feb;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 700; color: #fff;
+      flex-shrink: 0;
+    }
+
+    .signout-btn {
+      background: transparent;
+      color: #484f58;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 3px 8px;
+      font-size: 11px;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+      white-space: nowrap;
+    }
+    .signout-btn:hover { background: #4a1c1c; color: #f85149; border-color: #f85149; }
+
+    /* ── Status badge ─────────────────────────────────────────────────────── */
+    #status {
+      margin-left: auto;
+      font-size: 12px;
+      padding: 3px 10px;
+      border-radius: 12px;
+      background: #21262d;
+      color: #8b949e;
+      white-space: nowrap;
+    }
+    #status::before { content: '● '; }
+    #status.connecting   { background: #2d2a0f; color: #e3b341; }
+    #status.connected    { background: #1a4731; color: #56d364; }
+    #status.disconnected { background: #4a1c1c; color: #f85149; }
+
+    /* ── Terminal ─────────────────────────────────────────────────────────── */
+    #terminal-container {
+      flex: 1;
+      padding: 10px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    #terminal          { flex: 1; border-radius: 6px; overflow: hidden; }
+    .xterm             { height: 100%; }
+    .xterm-viewport    { border-radius: 6px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <a href="/" class="back-btn" title="Back to home">←</a>
+  <div class="traffic-lights">
+    <span class="tl-red"></span>
+    <span class="tl-yellow"></span>
+    <span class="tl-green"></span>
+  </div>
+  <div class="session-info">
+    <span class="session-icon" id="session-icon">🖥</span>
+    <span class="session-title" id="session-title">Local Shell</span>
+  </div>
+  <div class="user-badge">
+    <div class="avatar" id="user-avatar">?</div>
+    <span id="username-display">…</span>
+  </div>
+  <button class="signout-btn" id="signout-btn">Sign Out</button>
+  <span id="status">Connecting…</span>
+</header>
+
+<div id="terminal-container">
+  <div id="terminal"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-web-links@0.9.0/lib/xterm-addon-web-links.js"></script>
+<script>
+  // ── Terminal setup ─────────────────────────────────────────────────────────
+  const term = new Terminal({
+    cursorBlink: true,
+    theme: {
+      background:          '#0d1117',
+      foreground:          '#c9d1d9',
+      cursor:              '#58a6ff',
+      selectionBackground: '#264f78',
+      black:               '#0d1117',
+      red:                 '#ff7b72',
+      green:               '#3fb950',
+      yellow:              '#d29922',
+      blue:                '#58a6ff',
+      magenta:             '#bc8cff',
+      cyan:                '#39c5cf',
+      white:               '#b1bac4',
+      brightBlack:         '#6e7681',
+      brightRed:           '#ffa198',
+      brightGreen:         '#56d364',
+      brightYellow:        '#e3b341',
+      brightBlue:          '#79c0ff',
+      brightMagenta:       '#d2a8ff',
+      brightCyan:          '#56d4dd',
+      brightWhite:         '#f0f6fc',
+    },
+    fontFamily: "'Cascadia Code','Fira Code','JetBrains Mono',Menlo,Monaco,monospace",
+    fontSize: 14,
+    lineHeight: 1.2,
+    scrollback: 5000,
+  });
+
+  const fitAddon      = new FitAddon.FitAddon();
+  const webLinksAddon = new WebLinksAddon.WebLinksAddon();
+  term.loadAddon(fitAddon);
+  term.loadAddon(webLinksAddon);
+  term.open(document.getElementById('terminal'));
+  fitAddon.fit();
+
+  // ── Resolve session target from URL params ─────────────────────────────────
+  const params      = new URLSearchParams(location.search);
+  const containerId = params.get('container');
+  const imageName   = params.get('image');
+  const volumeName  = params.get('volume');
+  const networkName = params.get('network');
+  const memVal      = params.get('mem') || '512';
+  const cpuVal      = params.get('cpu') || '1';
+
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  let wsUrl, sessionIcon, sessionTitle;
+
+  if (containerId) {
+    wsUrl        = `${proto}//${location.host}?container=${encodeURIComponent(containerId)}`;
+    sessionIcon  = '📦';
+    sessionTitle = `exec: ${containerId}`;
+  } else if (imageName) {
+    wsUrl        = `${proto}//${location.host}?image=${encodeURIComponent(imageName)}`;
+    if (volumeName)  wsUrl += `&volume=${encodeURIComponent(volumeName)}`;
+    if (networkName) wsUrl += `&network=${encodeURIComponent(networkName)}`;
+    wsUrl += `&mem=${encodeURIComponent(memVal)}&cpu=${encodeURIComponent(cpuVal)}`;
+    sessionIcon  = '🐳';
+    const badges = [
+      volumeName  && `💾 ${volumeName}`,
+      networkName && `🌐 ${networkName}`,
+      `🔧 ${memVal}MB / ${cpuVal}CPU`,
+    ].filter(Boolean).join('  ');
+    sessionTitle = `run: ${imageName}  ${badges}`;
+  } else {
+    wsUrl        = `${proto}//${location.host}`;
+    sessionIcon  = '🖥';
+    sessionTitle = 'local shell';
+  }
+
+  document.getElementById('session-icon').textContent  = sessionIcon;
+  document.getElementById('session-title').textContent = sessionTitle;
+  document.title = `${sessionTitle} — Web Terminal`;
+
+  // ── Status helper ──────────────────────────────────────────────────────────
+  const statusEl = document.getElementById('status');
+  function setStatus(state, label) {
+    const defaults = { connecting: 'Connecting…', connected: 'Connected', disconnected: 'Disconnected' };
+    statusEl.textContent = label || defaults[state] || state;
+    statusEl.className   = state;
+  }
+
+  // ── Resize ─────────────────────────────────────────────────────────────────
+  let ws = null;
+  function sendResize() {
+    fitAddon.fit();
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
+    }
+  }
+  window.addEventListener('resize', sendResize);
+
+  // ── Connect ────────────────────────────────────────────────────────────────
+  setStatus('connecting');
+  ws = new WebSocket(wsUrl);
+
+  ws.onopen = () => {
+    setStatus('connected', 'Connected');
+    term.focus();
+    setTimeout(sendResize, 100);
+  };
+
+  ws.onclose = () => {
+    setStatus('disconnected');
+    term.write('\r\n\x1b[31mSession closed. \x1b[2m← Back to choose a new session.\x1b[0m\r\n');
+  };
+
+  ws.onerror = () => setStatus('disconnected');
+
+  ws.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+    if (msg.type === 'output') {
+      term.write(msg.data);
+    } else if (msg.type === 'exit') {
+      term.write(`\r\n\x1b[33mProcess exited (code ${msg.code})\x1b[0m\r\n`);
+      setStatus('disconnected');
+    }
+  };
+
+  term.onData((data) => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'input', data }));
+    }
+  });
+
+  // ── User info + sign out ───────────────────────────────────────────────────
+  fetch('/api/me').then(r => {
+    if (r.status === 401) { window.location.href = '/login'; return null; }
+    return r.json();
+  }).then(data => {
+    if (!data) return;
+    document.getElementById('username-display').textContent = data.username;
+    document.getElementById('user-avatar').textContent      = data.username[0].toUpperCase();
+  });
+
+  document.getElementById('signout-btn').addEventListener('click', async () => {
+    await fetch('/api/logout', { method: 'POST' });
+    window.location.href = '/login';
+  });
+</script>
+</body>
+</html>
