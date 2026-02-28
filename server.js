@@ -104,7 +104,6 @@ try {
 // ── Redis ─────────────────────────────────────────────────────────────────────
 const redisClient = new Redis({
   host:     process.env.REDIS_HOST     || '127.0.0.1',
-  // host:     '127.0.0.1',
   port:     parseInt(process.env.REDIS_PORT || '6379', 10),
   password: process.env.REDIS_PASSWORD || undefined,
   retryStrategy: times => Math.min(times * 100, 3000),
@@ -279,13 +278,75 @@ app.put('/api/me/ngrok-token', requireAuthAPI, (req, res) => {
 });
 
 // ── ngrok tunnels (in-memory) ─────────────────────────────────────────────────
-const activeTunnels = new Map(); // key: `${username}:${containerId}:${port}`
+const activeTunnels  = new Map();  // key: `${username}:${containerId}:${port}`
+const joinedNetworks = new Set();  // network IDs we attached to for tunneling
+
+// Detect own container ID when running inside Docker
+function getOwnContainerId() {
+  // cgroup v1
+  try {
+    const cgroup = fs.readFileSync('/proc/self/cgroup', 'utf8');
+    const m = cgroup.match(/\/docker\/([a-f0-9]{64})/);
+    if (m) return m[1];
+  } catch (_) {}
+  // cgroup v2 / mountinfo
+  try {
+    const minfo = fs.readFileSync('/proc/self/mountinfo', 'utf8');
+    const m = minfo.match(/\/docker\/containers\/([a-f0-9]{64})\//);
+    if (m) return m[1];
+  } catch (_) {}
+  return null;
+}
+
+// Attach webterminal container to the same network as the target container.
+// Returns { ip, networkId } on success, null if not running in Docker or no network found.
+async function connectToContainerNetwork(ownId, containerInfo) {
+  const nets = containerInfo.NetworkSettings.Networks;
+  for (const [netName, netInfo] of Object.entries(nets)) {
+    const ip        = netInfo.IPAddress;
+    const networkId = netInfo.NetworkID;
+    if (!ip || !networkId) continue;
+
+    // Check if webterminal is already on this network
+    try {
+      const ownInfo = await docker.getContainer(ownId).inspect();
+      const already = !!ownInfo.NetworkSettings.Networks[netName];
+      if (!already) {
+        await docker.getNetwork(networkId).connect({ Container: ownId });
+        joinedNetworks.add(networkId);
+        console.log(`[ngrok] attached webterminal to network ${netName} (${networkId.slice(0, 12)})`);
+      }
+      return { ip, networkId };
+    } catch (err) {
+      console.warn(`[ngrok] could not attach to network ${netName}: ${err.message}`);
+    }
+  }
+  return null;
+}
+
+// Disconnect from a network if no active tunnel still needs it
+async function maybeDisconnectNetwork(networkId) {
+  if (!networkId || !joinedNetworks.has(networkId)) return;
+  for (const t of activeTunnels.values()) {
+    if (t.networkId === networkId) return; // still in use
+  }
+  const ownId = getOwnContainerId();
+  if (!ownId) return;
+  try {
+    await docker.getNetwork(networkId).disconnect({ Container: ownId });
+    joinedNetworks.delete(networkId);
+    console.log(`[ngrok] detached webterminal from network ${networkId.slice(0, 12)}`);
+  } catch (err) {
+    console.warn(`[ngrok] could not detach from network ${networkId.slice(0, 12)}: ${err.message}`);
+  }
+}
 
 async function closeTunnelsForContainer(username, containerId) {
   for (const [key, t] of activeTunnels) {
     if (t.username === username && t.containerId === containerId) {
       try { await t.listener.close(); } catch (_) {}
       activeTunnels.delete(key);
+      await maybeDisconnectNetwork(t.networkId);
     }
   }
 }
@@ -295,6 +356,7 @@ async function closeTunnelsForUser(username) {
     if (t.username === username) {
       try { await t.listener.close(); } catch (_) {}
       activeTunnels.delete(key);
+      await maybeDisconnectNetwork(t.networkId);
     }
   }
 }
@@ -335,34 +397,49 @@ app.post('/api/containers/:id/expose', requireAuthAPI, async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 
-  // Resolve address: prefer published host port, fall back to container IP
+  // Resolve address and ensure webterminal can reach it
   let addr;
+  let networkId = null;
   try {
-    const info = await docker.getContainer(id).inspect();
+    const info     = await docker.getContainer(id).inspect();
     const bindings = info.NetworkSettings.Ports || {};
     const tcpKey   = `${port}/tcp`;
-    if (bindings[tcpKey]?.[0]?.HostPort) {
-      addr = `http://localhost:${bindings[tcpKey][0].HostPort}`;
-    } else {
-      const nets = info.NetworkSettings.Networks;
-      const ip   = Object.values(nets)[0]?.IPAddress;
+
+    // Priority 1: attach to the container's network and use its IP directly.
+    // This works whether or not ports are published, and is the correct approach
+    // inside Docker Compose where "localhost" refers to the webterminal container itself.
+    const ownId = getOwnContainerId();
+    if (ownId) {
+      const attached = await connectToContainerNetwork(ownId, info);
+      if (attached) {
+        addr      = `http://${attached.ip}:${port}`;
+        networkId = attached.networkId;
+        console.log(`[${username}] ngrok using container network → ${addr}`);
+      }
+    }
+
+    // Priority 2 (native/non-Docker installs): container IP reachable from the host directly.
+    if (!addr) {
+      const ip = Object.values(info.NetworkSettings.Networks)[0]?.IPAddress;
       if (!ip) return res.status(400).json({ error: 'Container has no network IP. Make sure it is running.' });
       addr = `http://${ip}:${port}`;
+      console.log(`[${username}] ngrok using container IP (native) → ${addr}`);
     }
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
 
-  // Pre-flight: verify the target is actually reachable before starting ngrok
-  const addrUrl  = new URL(addr);
-  const connTest = await testTcpConnectivity(addrUrl.hostname, addrUrl.port);
+  // Pre-flight: verify the resolved address is actually reachable
+  const addrUrl   = new URL(addr);
+  const addrPort  = addrUrl.port || (addrUrl.protocol === 'https:' ? '443' : '80');
+  const connTest  = await testTcpConnectivity(addrUrl.hostname, addrPort);
   if (!connTest.ok) {
     console.warn(`[${username}] ngrok pre-check failed for ${addr}: ${connTest.error}`);
+    // Clean up any network we just joined since the pre-check failed
+    await maybeDisconnectNetwork(networkId);
     return res.status(400).json({
       error: `Cannot reach ${addr} — ${connTest.error}. ` +
-        `Make sure the service is running on port ${port} inside the container ` +
-        `and that the container is accessible from this server. ` +
-        `If running in Docker Compose, try publishing the port with "Publish ports" (e.g. ${port}:${port}) when launching the container.`,
+        `Make sure the service is actually listening on port ${port} inside the container.`,
       addr,
     });
   }
@@ -370,18 +447,21 @@ app.post('/api/containers/:id/expose', requireAuthAPI, async (req, res) => {
   // Close any existing tunnel on the same port
   const tunnelKey = `${username}:${id}:${port}`;
   if (activeTunnels.has(tunnelKey)) {
-    try { await activeTunnels.get(tunnelKey).listener.close(); } catch (_) {}
+    const old = activeTunnels.get(tunnelKey);
+    try { await old.listener.close(); } catch (_) {}
     activeTunnels.delete(tunnelKey);
+    await maybeDisconnectNetwork(old.networkId);
   }
 
   try {
     const listener = await ngrok.forward({ addr, authtoken: dbUser.ngrok_token });
     const url = listener.url();
-    activeTunnels.set(tunnelKey, { listener, url, addr, port: parseInt(port, 10), containerId: id, username });
+    activeTunnels.set(tunnelKey, { listener, url, addr, networkId, port: parseInt(port, 10), containerId: id, username });
     console.log(`[${username}] ngrok tunnel ${url} → ${addr}`);
     res.json({ ok: true, url, addr });
   } catch (err) {
     console.error(`[${username}] ngrok.forward failed for ${addr}:`, err.message);
+    await maybeDisconnectNetwork(networkId);
     res.status(500).json({ error: err.message, addr });
   }
 });
@@ -396,6 +476,7 @@ app.delete('/api/containers/:id/expose/:port', requireAuthAPI, async (req, res) 
   try {
     await tunnel.listener.close();
     activeTunnels.delete(tunnelKey);
+    await maybeDisconnectNetwork(tunnel.networkId);
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -905,7 +986,7 @@ app.post('/api/containers/run', requireAuthAPI, async (req, res) => {
     ...(userParam  && userParam !== 'root' ? ['--user',       userParam]  : []),
     ...(entrypoint                         ? ['--entrypoint', entrypoint] : []),
     ...(volume      ? ['-v', `${volume}:/data`]    : []),
-    // ...(networkName ? ['--network', networkName]   : []),
+    ...(networkName ? ['--network', networkName]   : []),
     image.trim(),
     ...(shell ? ['sh', '-c', cmd || 'command -v bash >/dev/null 2>&1 && exec bash || exec sh'] : []),
   ];
