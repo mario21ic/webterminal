@@ -1384,7 +1384,7 @@
       const root = document.getElementById('container-root-check').checked;
       let url = `/terminal.html?container=${encodeURIComponent(selectedContainer)}`;
       if (root) url += '&root=1';
-      window.location.href = url;
+      window.open(url, '_blank');
     } else if (type === 'image' && selectedImage) {
       const vol  = document.getElementById('vol-select').value;
       const net  = document.getElementById('net-select').value;
@@ -1396,28 +1396,31 @@
       if (net)  url += `&network=${encodeURIComponent(net)}`;
       url += `&mem=${encodeURIComponent(mem)}&cpu=${encodeURIComponent(cpu)}`;
       if (root) url += '&root=1';
-      window.location.href = url;
+      window.open(url, '_blank');
     }
   }
 
   // ── Logs modal ────────────────────────────────────────────────────────────
   let logsContainerId = null;
+  let logsInterval    = null;
 
   function closeLogs() {
+    clearInterval(logsInterval);
+    logsInterval = null;
     document.getElementById('logs-modal').classList.add('hidden');
     logsContainerId = null;
   }
 
   async function loadLogs() {
     if (!logsContainerId) return;
-    const pre = document.getElementById('logs-output');
-    pre.textContent = 'Loading…';
+    const pre      = document.getElementById('logs-output');
+    const atBottom = pre.scrollHeight - pre.scrollTop <= pre.clientHeight + 4;
     const res = await apiFetch(`/api/containers/${encodeURIComponent(logsContainerId)}/logs`);
     if (!res) return;
     if (!res.ok) { const d = await res.json(); pre.textContent = d.error || 'Error'; return; }
     const text = await res.text();
     pre.textContent = text || '(no output)';
-    pre.scrollTop = pre.scrollHeight;
+    if (atBottom) pre.scrollTop = pre.scrollHeight;
   }
 
   async function viewLogs(event, id, name) {
@@ -1427,6 +1430,8 @@
     document.getElementById('logs-output').textContent = 'Loading…';
     document.getElementById('logs-modal').classList.remove('hidden');
     await loadLogs();
+    clearInterval(logsInterval);
+    logsInterval = setInterval(loadLogs, 2000);
   }
 
   // ── Create Image (commit) modal ───────────────────────────────────────────

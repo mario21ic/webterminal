@@ -29,4 +29,10 @@
 - Bug cuando montas /data siempre es con root y no user 1000
 - Bug usuario crea con el mismo nombre no avisa, debe ser prefijo <username>/
 - Bug cuando crea debe quedar un loading o porcentaje avance
-- RUn a container without a shell, just command by default like nginx
+- Run a container without a shell, just command by default like nginx: nginx -g 'daemon off;'
+- Session storage on third party
+
+- Details of volume
+- Details of network
+- Always run the attach command unless the run as root checkbox is checked.
+
