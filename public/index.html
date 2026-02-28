@@ -2349,11 +2349,14 @@
     if (tunnels.length === 0) { section.style.display = 'none'; return; }
     section.style.display = '';
     list.innerHTML = tunnels.map(t => `
-      <div class="tunnel-row">
-        <span class="tunnel-port-badge">:${t.port}</span>
-        <a class="tunnel-url" href="${t.url}" target="_blank" title="${t.url}">${t.url}</a>
-        <button class="copy-url-btn" onclick="copyTunnelUrl('${t.url}',this)">Copy</button>
-        <button class="stop-tunnel-btn" onclick="stopTunnel(${t.port})">Stop</button>
+      <div class="tunnel-row" style="flex-direction:column;align-items:stretch;gap:5px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="tunnel-port-badge">:${t.port}</span>
+          <a class="tunnel-url" href="${t.url}" target="_blank" title="${t.url}">${t.url}</a>
+          <button class="copy-url-btn" onclick="copyTunnelUrl('${t.url}',this)">Copy</button>
+          <button class="stop-tunnel-btn" onclick="stopTunnel(${t.port})">Stop</button>
+        </div>
+        ${t.addr ? `<div style="font-size:11px;color:#484f58;font-family:monospace;padding-left:2px">→ ${t.addr}</div>` : ''}
       </div>`).join('');
   }
 
@@ -2382,7 +2385,8 @@
         showToast(`Tunnel active: ${d.url}`);
       } else {
         const d = await res.json();
-        errorEl.textContent   = d.error || 'Failed to start tunnel.';
+        errorEl.innerHTML = (d.error || 'Failed to start tunnel.')
+          + (d.addr ? `<br><span style="font-family:monospace;font-size:11px;color:#8b949e">tried: ${d.addr}</span>` : '');
         errorEl.style.display = 'block';
       }
     } finally {

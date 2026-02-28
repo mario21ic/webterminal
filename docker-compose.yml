@@ -10,6 +10,9 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+    #network_mode: "host"
+    ports:
+      - "6379:6379"
 
   webterminal:
     build: .
@@ -27,6 +30,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       # Data
       - webterminal_data:/app/data
+    #network_mode: "host"
     ports:
       - "3000:3000"
     environment:

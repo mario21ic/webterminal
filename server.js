@@ -12,6 +12,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { execFile } = require('child_process');
+const net   = require('net');
 const ngrok = require('@ngrok/ngrok');
 
 const PORT           = process.env.PORT           || 3000;
@@ -102,7 +103,8 @@ try {
 
 // ── Redis ─────────────────────────────────────────────────────────────────────
 const redisClient = new Redis({
-  host:     process.env.REDIS_HOST     || '127.0.0.1',
+  // host:     process.env.REDIS_HOST     || '127.0.0.1',
+  host:     '127.0.0.1',
   port:     parseInt(process.env.REDIS_PORT || '6379', 10),
   password: process.env.REDIS_PASSWORD || undefined,
   retryStrategy: times => Math.min(times * 100, 3000),
@@ -304,7 +306,7 @@ app.get('/api/containers/:id/expose', requireAuthAPI, (req, res) => {
   const result = [];
   for (const t of activeTunnels.values()) {
     if (t.username === username && t.containerId === id) {
-      result.push({ port: t.port, url: t.url });
+      result.push({ port: t.port, url: t.url, addr: t.addr });
     }
   }
   res.json(result);
@@ -351,6 +353,20 @@ app.post('/api/containers/:id/expose', requireAuthAPI, async (req, res) => {
     return res.status(500).json({ error: err.message });
   }
 
+  // Pre-flight: verify the target is actually reachable before starting ngrok
+  const addrUrl  = new URL(addr);
+  const connTest = await testTcpConnectivity(addrUrl.hostname, addrUrl.port);
+  if (!connTest.ok) {
+    console.warn(`[${username}] ngrok pre-check failed for ${addr}: ${connTest.error}`);
+    return res.status(400).json({
+      error: `Cannot reach ${addr} — ${connTest.error}. ` +
+        `Make sure the service is running on port ${port} inside the container ` +
+        `and that the container is accessible from this server. ` +
+        `If running in Docker Compose, try publishing the port with "Publish ports" (e.g. ${port}:${port}) when launching the container.`,
+      addr,
+    });
+  }
+
   // Close any existing tunnel on the same port
   const tunnelKey = `${username}:${id}:${port}`;
   if (activeTunnels.has(tunnelKey)) {
@@ -361,10 +377,12 @@ app.post('/api/containers/:id/expose', requireAuthAPI, async (req, res) => {
   try {
     const listener = await ngrok.forward({ addr, authtoken: dbUser.ngrok_token });
     const url = listener.url();
-    activeTunnels.set(tunnelKey, { listener, url, port: parseInt(port, 10), containerId: id, username });
+    activeTunnels.set(tunnelKey, { listener, url, addr, port: parseInt(port, 10), containerId: id, username });
+    console.log(`[${username}] ngrok tunnel ${url} → ${addr}`);
     res.json({ ok: true, url, addr });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(`[${username}] ngrok.forward failed for ${addr}:`, err.message);
+    res.status(500).json({ error: err.message, addr });
   }
 });
 
@@ -385,6 +403,16 @@ app.delete('/api/containers/:id/expose/:port', requireAuthAPI, async (req, res) 
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+// TCP connectivity pre-check (3 s timeout)
+function testTcpConnectivity(host, port) {
+  return new Promise(resolve => {
+    const sock = net.createConnection({ host, port: parseInt(port, 10), timeout: 3000 });
+    sock.once('connect', () => { sock.destroy(); resolve({ ok: true }); });
+    sock.once('timeout', () => { sock.destroy(); resolve({ ok: false, error: 'connection timed out' }); });
+    sock.once('error',   err => { resolve({ ok: false, error: err.message }); });
+  });
+}
 
 // Parse "8080:80, 443:443" → ['-p','8080:80','-p','443:443']
 function parsePortFlags(portsStr) {
