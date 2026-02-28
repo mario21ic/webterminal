@@ -28,15 +28,15 @@ db.exec(`
     password_hash TEXT    NOT NULL,
     role          TEXT    NOT NULL DEFAULT 'user'
                   CHECK(role IN ('admin','user')),
-    active        INTEGER NOT NULL DEFAULT 1,
-    created_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    active         INTEGER NOT NULL DEFAULT 1,
+    max_containers INTEGER NOT NULL DEFAULT 5,
+    created_at     TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
   )
 `);
 
-// ── Migrate existing databases that lack the active column ────────────────
-try {
-  db.exec(`ALTER TABLE users ADD COLUMN active INTEGER NOT NULL DEFAULT 1`);
-} catch (_) { /* column already exists */ }
+// ── Migrate existing databases ─────────────────────────────────────────────
+try { db.exec(`ALTER TABLE users ADD COLUMN active INTEGER NOT NULL DEFAULT 1`); } catch (_) {}
+try { db.exec(`ALTER TABLE users ADD COLUMN max_containers INTEGER NOT NULL DEFAULT 5`); } catch (_) {}
 
 // ── Seed users on first run ───────────────────────────────────────────────────
 function seedUser(username, password, role) {
@@ -70,12 +70,13 @@ if (db.prepare('SELECT COUNT(*) as n FROM users').get().n === 0) {
 // ── DB helpers ────────────────────────────────────────────────────────────────
 const stmts = {
   findUser:     db.prepare('SELECT * FROM users WHERE username = ?'),
-  listUsers:    db.prepare('SELECT username, role, active, created_at FROM users ORDER BY created_at ASC'),
-  createUser:   db.prepare('INSERT INTO users (username, password_hash, role, active) VALUES (?, ?, ?, ?)'),
-  updatePass:   db.prepare('UPDATE users SET password_hash = ? WHERE username = ?'),
-  updateRole:   db.prepare('UPDATE users SET role = ? WHERE username = ?'),
-  updateActive: db.prepare('UPDATE users SET active = ? WHERE username = ?'),
-  deleteUser:   db.prepare('DELETE FROM users WHERE username = ?'),
+  listUsers:         db.prepare('SELECT username, role, active, max_containers, created_at FROM users ORDER BY created_at ASC'),
+  createUser:        db.prepare('INSERT INTO users (username, password_hash, role, active, max_containers) VALUES (?, ?, ?, ?, ?)'),
+  updatePass:        db.prepare('UPDATE users SET password_hash = ? WHERE username = ?'),
+  updateRole:        db.prepare('UPDATE users SET role = ? WHERE username = ?'),
+  updateActive:      db.prepare('UPDATE users SET active = ? WHERE username = ?'),
+  updateMaxContainers: db.prepare('UPDATE users SET max_containers = ? WHERE username = ?'),
+  deleteUser:        db.prepare('DELETE FROM users WHERE username = ?'),
 };
 
 // ── Docker ────────────────────────────────────────────────────────────────────
@@ -156,7 +157,8 @@ app.post('/api/logout', (req, res) => {
 });
 
 app.get('/api/me', requireAuthAPI, (req, res) => {
-  res.json({ username: req.session.user.username, role: req.session.user.role });
+  const u = stmts.findUser.get(req.session.user.username);
+  res.json({ username: u.username, role: u.role, max_containers: u.max_containers });
 });
 
 // ── Admin API ─────────────────────────────────────────────────────────────────
@@ -165,13 +167,14 @@ app.get('/api/admin/users', requireAuthAPI, requireAdmin, (req, res) => {
 });
 
 app.post('/api/admin/users', requireAuthAPI, requireAdmin, (req, res) => {
-  const { username, password, role = 'user', active = true } = req.body;
+  const { username, password, role = 'user', active = true, max_containers = 5 } = req.body;
   if (!username?.trim())  return res.status(400).json({ error: 'Username is required' });
   if (!password?.trim())  return res.status(400).json({ error: 'Password is required' });
   if (!['admin', 'user'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
+  const maxC = Math.max(1, Math.min(100, parseInt(max_containers, 10) || 5));
 
   try {
-    stmts.createUser.run(username.trim(), bcrypt.hashSync(password, 10), role, active ? 1 : 0);
+    stmts.createUser.run(username.trim(), bcrypt.hashSync(password, 10), role, active ? 1 : 0, maxC);
     res.status(201).json({ ok: true });
   } catch (err) {
     if (err.message.includes('UNIQUE')) return res.status(409).json({ error: 'Username already exists' });
@@ -181,7 +184,7 @@ app.post('/api/admin/users', requireAuthAPI, requireAdmin, (req, res) => {
 
 app.put('/api/admin/users/:username', requireAuthAPI, requireAdmin, (req, res) => {
   const { username } = req.params;
-  const { password, role, active } = req.body;
+  const { password, role, active, max_containers } = req.body;
 
   if (!stmts.findUser.get(username)) return res.status(404).json({ error: 'User not found' });
 
@@ -196,6 +199,10 @@ app.put('/api/admin/users/:username', requireAuthAPI, requireAdmin, (req, res) =
   if (password?.trim()) stmts.updatePass.run(bcrypt.hashSync(password, 10), username);
   if (role && ['admin', 'user'].includes(role)) stmts.updateRole.run(role, username);
   if (typeof active === 'boolean') stmts.updateActive.run(active ? 1 : 0, username);
+  if (max_containers != null) {
+    const maxC = Math.max(1, Math.min(100, parseInt(max_containers, 10) || 5));
+    stmts.updateMaxContainers.run(maxC, username);
+  }
 
   res.json({ ok: true });
 });
@@ -555,6 +562,25 @@ wss.on('connection', async (ws, req) => {
     opts = { name: 'xterm-color', cols: 80, rows: 24, env: process.env };
 
   } else if (imageName) {
+    // ── Container limit check ────────────────────────────────────────────
+    if (docker) {
+      try {
+        const dbUser   = stmts.findUser.get(username);
+        const existing = await docker.listContainers({
+          all: true,
+          filters: { label: [`${LABEL_USER}=${username}`] },
+        });
+        if (existing.length >= dbUser.max_containers) {
+          ws.send(JSON.stringify({ type: 'output', data:
+            `\r\n\x1b[31mContainer limit reached (${dbUser.max_containers}/${dbUser.max_containers}). Remove an existing container first.\x1b[0m\r\n` }));
+          ws.close();
+          return;
+        }
+      } catch (err) {
+        console.warn(`[${username}] could not check container limit: ${err.message}`);
+      }
+    }
+
     const volumeName  = url.searchParams.get('volume');
     let   networkName = url.searchParams.get('network');
 

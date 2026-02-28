@@ -18,4 +18,4 @@
 - Add a button to see logs on realtime
 - Add widget to open ports before to launch container
 - Audit module: log all events into a file to see on admin panel
-- Quota: set max containers per user
+- Quota: set max containers per user ✅

@@ -592,6 +592,23 @@
       white-space: nowrap;
     }
 
+    /* ── Container counter badge ─────────────────────────────────────────── */
+    .counter-badge {
+      font-size: 12px;
+      font-weight: 600;
+      color: #8b949e;
+      background: #21262d;
+      border: 1px solid #30363d;
+      border-radius: 10px;
+      padding: 2px 9px;
+      white-space: nowrap;
+    }
+    .counter-badge.at-limit {
+      background: rgba(248,81,73,.10);
+      border-color: rgba(248,81,73,.3);
+      color: #f85149;
+    }
+
     /* ── Run-as-root checkbox ────────────────────────────────────────────── */
     .checkbox-row {
       display: flex;
@@ -681,6 +698,7 @@
         <h2>My Containers</h2>
         <p>Connect · stop · remove containers</p>
       </div>
+      <span class="counter-badge" id="container-counter" style="display:none"></span>
       <button class="remove-all-btn" id="remove-all-btn" onclick="removeAllContainers()">
         ✕ Remove All
       </button>
@@ -831,6 +849,25 @@
   let selectedContainerRunning = false;
   let selectedImage            = null;
   let currentVolumes           = [];
+  let maxContainers            = null;
+
+  function updateContainerCounter(count) {
+    const el = document.getElementById('container-counter');
+    if (!el || maxContainers === null) return;
+    const atLimit = count >= maxContainers;
+    el.textContent  = `${count} / ${maxContainers}`;
+    el.className    = 'counter-badge' + (atLimit ? ' at-limit' : '');
+    el.style.display = '';
+    // Disable the image launch button when at the limit
+    const imageBtn = document.getElementById('image-btn');
+    if (atLimit) {
+      imageBtn.disabled = true;
+      imageBtn.textContent = 'Container limit reached';
+    } else {
+      imageBtn.textContent = 'Launch Container →';
+      if (selectedImage) imageBtn.disabled = false;
+    }
+  }
 
   // ── Auth-aware fetch ──────────────────────────────────────────────────────
   async function apiFetch(url, opts = {}) {
@@ -894,6 +931,7 @@
     selectedContainerRunning = false;
     document.getElementById('container-btn').disabled       = true;
     document.getElementById('remove-all-btn').style.display = 'none';
+    updateContainerCounter(containers.length);
 
     if (containers.length === 0) {
       listEl.innerHTML = '<div class="list-placeholder">No containers</div>';
@@ -1320,11 +1358,15 @@
   async function loadUser() {
     const res = await apiFetch('/api/me');
     if (!res) return;
-    const { username, role } = await res.json();
+    const { username, role, max_containers } = await res.json();
     document.getElementById('username-display').textContent = username;
     document.getElementById('user-avatar').textContent      = username[0].toUpperCase();
     if (role === 'admin') document.getElementById('admin-link').style.display = 'inline-flex';
     else document.getElementById('card-local').style.display = 'none';
+    maxContainers = max_containers;
+    updateContainerCounter(
+      document.getElementById('container-list').querySelectorAll('.list-item').length
+    );
   }
 
   document.getElementById('signout-btn').addEventListener('click', async () => {

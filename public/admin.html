@@ -166,6 +166,8 @@
     .active-badge.on   { background: rgba(63,185,80,.12);   color: #3fb950; border: 1px solid rgba(63,185,80,.3); }
     .active-badge.off  { background: rgba(248,81,73,.10);   color: #f85149; border: 1px solid rgba(248,81,73,.3); }
 
+    .td-limit { color: #8b949e; font-size: 13px; text-align: center; }
+
     .td-date { color: #6e7681; font-size: 12px; }
 
     .td-actions { display: flex; gap: 8px; }
@@ -358,12 +360,13 @@
           <th>Username</th>
           <th>Role</th>
           <th>Active</th>
+          <th>Limit</th>
           <th>Created At</th>
           <th>Actions</th>
         </tr>
       </thead>
       <tbody id="users-table">
-        <tr class="empty-row"><td colspan="5">Loading…</td></tr>
+        <tr class="empty-row"><td colspan="6">Loading…</td></tr>
       </tbody>
     </table>
   </div>
@@ -417,6 +420,11 @@
           <option value="admin">Admin — can manage users</option>
         </select>
       </div>
+      <div class="form-group">
+        <label>Max Containers</label>
+        <input type="number" id="f-max-containers" min="1" max="100" value="5" />
+        <span class="form-hint">Maximum number of containers this user can run (1–100)</span>
+      </div>
       <div class="form-group-check" id="f-active-group" style="display:none">
         <input type="checkbox" id="f-active" checked />
         <label for="f-active">Active — user can log in and run containers</label>
@@ -469,7 +477,7 @@
     const tbody  = document.getElementById('users-table');
 
     if (users.length === 0) {
-      tbody.innerHTML = '<tr class="empty-row"><td colspan="5">No users found</td></tr>';
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="6">No users found</td></tr>';
       return;
     }
 
@@ -487,10 +495,11 @@
           </td>
           <td><span class="role-badge ${u.role}">${u.role}</span></td>
           <td><span class="active-badge ${active ? 'on' : 'off'}">${active ? 'active' : 'inactive'}</span></td>
+          <td class="td-limit">${u.max_containers}</td>
           <td class="td-date">${date}</td>
           <td class="td-actions">
             <button class="btn-edit"
-              onclick='openEdit(${JSON.stringify(u.username)}, ${JSON.stringify(u.role)}, ${active})'>
+              onclick='openEdit(${JSON.stringify(u.username)}, ${JSON.stringify(u.role)}, ${active}, ${u.max_containers})'>
               Edit
             </button>
             <button class="btn-reset-pass"
@@ -520,6 +529,7 @@
     document.getElementById('f-password').value           = '';
     document.getElementById('f-pass-group').style.display  = '';
     document.getElementById('f-role').value               = 'user';
+    document.getElementById('f-max-containers').value     = '5';
     document.getElementById('f-active').checked           = true;
     document.getElementById('f-active-group').style.display = '';
     document.getElementById('form-error').style.display   = 'none';
@@ -527,7 +537,7 @@
     setTimeout(() => document.getElementById('f-username').focus(), 50);
   }
 
-  function openEdit(username, role, active) {
+  function openEdit(username, role, active, maxContainers) {
     editUsername = username;
     document.getElementById('modal-title').textContent    = `Edit: ${username}`;
     document.getElementById('form-submit').textContent    = 'Save Changes';
@@ -535,6 +545,7 @@
     document.getElementById('f-username').disabled        = true;
     document.getElementById('f-pass-group').style.display  = 'none';
     document.getElementById('f-role').value               = role;
+    document.getElementById('f-max-containers').value     = maxContainers;
     document.getElementById('f-active').checked           = active;
     document.getElementById('f-active-group').style.display = '';
     document.getElementById('form-error').style.display   = 'none';
@@ -560,8 +571,9 @@
   async function submitForm() {
     const username  = document.getElementById('f-username').value.trim();
     const password  = editUsername ? null : document.getElementById('f-password').value;
-    const role      = document.getElementById('f-role').value;
-    const active    = document.getElementById('f-active').checked;
+    const role           = document.getElementById('f-role').value;
+    const max_containers = parseInt(document.getElementById('f-max-containers').value, 10) || 5;
+    const active         = document.getElementById('f-active').checked;
     const errorEl   = document.getElementById('form-error');
     const submitBtn = document.getElementById('form-submit');
 
@@ -588,13 +600,13 @@
         res = await apiFetch(`/api/admin/users/${encodeURIComponent(editUsername)}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ role, active }),
+          body: JSON.stringify({ role, active, max_containers }),
         });
       } else {
         res = await apiFetch('/api/admin/users', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username, password, role, active }),
+          body: JSON.stringify({ username, password, role, active, max_containers }),
         });
       }
 
