@@ -202,12 +202,14 @@
   const networkName = params.get('network');
   const memVal      = params.get('mem') || '512';
   const cpuVal      = params.get('cpu') || '1';
+  const rootVal     = params.get('root');
 
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   let wsUrl, sessionIcon, sessionTitle;
 
   if (containerId) {
     wsUrl        = `${proto}//${location.host}?container=${encodeURIComponent(containerId)}`;
+    if (rootVal) wsUrl += `&root=${encodeURIComponent(rootVal)}`;
     sessionIcon  = '📦';
     sessionTitle = `exec: ${containerId}`;
   } else if (imageName) {
@@ -215,6 +217,7 @@
     if (volumeName)  wsUrl += `&volume=${encodeURIComponent(volumeName)}`;
     if (networkName) wsUrl += `&network=${encodeURIComponent(networkName)}`;
     wsUrl += `&mem=${encodeURIComponent(memVal)}&cpu=${encodeURIComponent(cpuVal)}`;
+    if (rootVal)     wsUrl += `&root=${encodeURIComponent(rootVal)}`;
     sessionIcon  = '🐳';
     const badges = [
       volumeName  && `💾 ${volumeName}`,

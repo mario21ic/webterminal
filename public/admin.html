@@ -154,15 +154,17 @@
       font-family: system-ui;
     }
 
-    .role-badge {
+    .role-badge, .active-badge {
       display: inline-block;
       font-size: 11px;
       font-weight: 600;
       padding: 2px 8px;
       border-radius: 10px;
     }
-    .role-badge.admin { background: rgba(210,168,255,.15); color: #d2a8ff; border: 1px solid rgba(210,168,255,.3); }
-    .role-badge.user  { background: rgba(88,166,255,.12);  color: #79c0ff; border: 1px solid rgba(88,166,255,.25); }
+    .role-badge.admin  { background: rgba(210,168,255,.15); color: #d2a8ff; border: 1px solid rgba(210,168,255,.3); }
+    .role-badge.user   { background: rgba(88,166,255,.12);  color: #79c0ff; border: 1px solid rgba(88,166,255,.25); }
+    .active-badge.on   { background: rgba(63,185,80,.12);   color: #3fb950; border: 1px solid rgba(63,185,80,.3); }
+    .active-badge.off  { background: rgba(248,81,73,.10);   color: #f85149; border: 1px solid rgba(248,81,73,.3); }
 
     .td-date { color: #6e7681; font-size: 12px; }
 
@@ -289,6 +291,25 @@
 
     .form-hint { font-size: 11px; color: #484f58; margin-top: 2px; }
 
+    .form-group-check {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 0;
+    }
+    .form-group-check input[type="checkbox"] {
+      width: 15px; height: 15px;
+      accent-color: #3fb950;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .form-group-check label {
+      font-size: 13px;
+      color: #c9d1d9;
+      cursor: pointer;
+      user-select: none;
+    }
+
     .form-error {
       background: rgba(248,81,73,.1);
       border: 1px solid rgba(248,81,73,.35);
@@ -336,12 +357,13 @@
         <tr>
           <th>Username</th>
           <th>Role</th>
+          <th>Active</th>
           <th>Created At</th>
           <th>Actions</th>
         </tr>
       </thead>
       <tbody id="users-table">
-        <tr class="empty-row"><td colspan="4">Loading…</td></tr>
+        <tr class="empty-row"><td colspan="5">Loading…</td></tr>
       </tbody>
     </table>
   </div>
@@ -395,6 +417,10 @@
           <option value="admin">Admin — can manage users</option>
         </select>
       </div>
+      <div class="form-group-check" id="f-active-group" style="display:none">
+        <input type="checkbox" id="f-active" checked />
+        <label for="f-active">Active — user can log in and run containers</label>
+      </div>
       <div class="form-error" id="form-error"></div>
     </div>
     <div class="modal-footer">
@@ -443,13 +469,14 @@
     const tbody  = document.getElementById('users-table');
 
     if (users.length === 0) {
-      tbody.innerHTML = '<tr class="empty-row"><td colspan="4">No users found</td></tr>';
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="5">No users found</td></tr>';
       return;
     }
 
     tbody.innerHTML = users.map(u => {
-      const isMe = u.username === currentUser;
-      const date = new Date(u.created_at).toLocaleString();
+      const isMe   = u.username === currentUser;
+      const active = u.active !== 0;
+      const date   = new Date(u.created_at).toLocaleString();
       return `
         <tr>
           <td>
@@ -459,10 +486,11 @@
             </div>
           </td>
           <td><span class="role-badge ${u.role}">${u.role}</span></td>
+          <td><span class="active-badge ${active ? 'on' : 'off'}">${active ? 'active' : 'inactive'}</span></td>
           <td class="td-date">${date}</td>
           <td class="td-actions">
             <button class="btn-edit"
-              onclick='openEdit(${JSON.stringify(u.username)}, ${JSON.stringify(u.role)})'>
+              onclick='openEdit(${JSON.stringify(u.username)}, ${JSON.stringify(u.role)}, ${active})'>
               Edit
             </button>
             <button class="btn-reset-pass"
@@ -485,27 +513,31 @@
   // ── Modal helpers ──────────────────────────────────────────────────────────
   function openCreate() {
     editUsername = null;
-    document.getElementById('modal-title').textContent   = 'New User';
-    document.getElementById('form-submit').textContent   = 'Create User';
-    document.getElementById('f-username').value          = '';
-    document.getElementById('f-username').disabled       = false;
-    document.getElementById('f-password').value          = '';
-    document.getElementById('f-pass-group').style.display = '';
-    document.getElementById('f-role').value              = 'user';
-    document.getElementById('form-error').style.display  = 'none';
+    document.getElementById('modal-title').textContent    = 'New User';
+    document.getElementById('form-submit').textContent    = 'Create User';
+    document.getElementById('f-username').value           = '';
+    document.getElementById('f-username').disabled        = false;
+    document.getElementById('f-password').value           = '';
+    document.getElementById('f-pass-group').style.display  = '';
+    document.getElementById('f-role').value               = 'user';
+    document.getElementById('f-active').checked           = true;
+    document.getElementById('f-active-group').style.display = '';
+    document.getElementById('form-error').style.display   = 'none';
     document.getElementById('modal-overlay').classList.add('open');
     setTimeout(() => document.getElementById('f-username').focus(), 50);
   }
 
-  function openEdit(username, role) {
+  function openEdit(username, role, active) {
     editUsername = username;
-    document.getElementById('modal-title').textContent   = `Edit: ${username}`;
-    document.getElementById('form-submit').textContent   = 'Save Changes';
-    document.getElementById('f-username').value          = username;
-    document.getElementById('f-username').disabled       = true;
-    document.getElementById('f-pass-group').style.display = 'none';
-    document.getElementById('f-role').value              = role;
-    document.getElementById('form-error').style.display  = 'none';
+    document.getElementById('modal-title').textContent    = `Edit: ${username}`;
+    document.getElementById('form-submit').textContent    = 'Save Changes';
+    document.getElementById('f-username').value           = username;
+    document.getElementById('f-username').disabled        = true;
+    document.getElementById('f-pass-group').style.display  = 'none';
+    document.getElementById('f-role').value               = role;
+    document.getElementById('f-active').checked           = active;
+    document.getElementById('f-active-group').style.display = '';
+    document.getElementById('form-error').style.display   = 'none';
     document.getElementById('modal-overlay').classList.add('open');
     setTimeout(() => document.getElementById('f-role').focus(), 50);
   }
@@ -529,6 +561,7 @@
     const username  = document.getElementById('f-username').value.trim();
     const password  = editUsername ? null : document.getElementById('f-password').value;
     const role      = document.getElementById('f-role').value;
+    const active    = document.getElementById('f-active').checked;
     const errorEl   = document.getElementById('form-error');
     const submitBtn = document.getElementById('form-submit');
 
@@ -555,13 +588,13 @@
         res = await apiFetch(`/api/admin/users/${encodeURIComponent(editUsername)}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ role }),
+          body: JSON.stringify({ role, active }),
         });
       } else {
         res = await apiFetch('/api/admin/users', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username, password, role }),
+          body: JSON.stringify({ username, password, role, active }),
         });
       }
 

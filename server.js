@@ -28,9 +28,15 @@ db.exec(`
     password_hash TEXT    NOT NULL,
     role          TEXT    NOT NULL DEFAULT 'user'
                   CHECK(role IN ('admin','user')),
+    active        INTEGER NOT NULL DEFAULT 1,
     created_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
   )
 `);
+
+// ── Migrate existing databases that lack the active column ────────────────
+try {
+  db.exec(`ALTER TABLE users ADD COLUMN active INTEGER NOT NULL DEFAULT 1`);
+} catch (_) { /* column already exists */ }
 
 // ── Seed users on first run ───────────────────────────────────────────────────
 function seedUser(username, password, role) {
@@ -63,12 +69,13 @@ if (db.prepare('SELECT COUNT(*) as n FROM users').get().n === 0) {
 
 // ── DB helpers ────────────────────────────────────────────────────────────────
 const stmts = {
-  findUser:   db.prepare('SELECT * FROM users WHERE username = ?'),
-  listUsers:  db.prepare('SELECT username, role, created_at FROM users ORDER BY created_at ASC'),
-  createUser: db.prepare('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)'),
-  updatePass: db.prepare('UPDATE users SET password_hash = ? WHERE username = ?'),
-  updateRole: db.prepare('UPDATE users SET role = ? WHERE username = ?'),
-  deleteUser: db.prepare('DELETE FROM users WHERE username = ?'),
+  findUser:     db.prepare('SELECT * FROM users WHERE username = ?'),
+  listUsers:    db.prepare('SELECT username, role, active, created_at FROM users ORDER BY created_at ASC'),
+  createUser:   db.prepare('INSERT INTO users (username, password_hash, role, active) VALUES (?, ?, ?, ?)'),
+  updatePass:   db.prepare('UPDATE users SET password_hash = ? WHERE username = ?'),
+  updateRole:   db.prepare('UPDATE users SET role = ? WHERE username = ?'),
+  updateActive: db.prepare('UPDATE users SET active = ? WHERE username = ?'),
+  deleteUser:   db.prepare('DELETE FROM users WHERE username = ?'),
 };
 
 // ── Docker ────────────────────────────────────────────────────────────────────
@@ -96,12 +103,16 @@ app.use(sessionMiddleware);
 
 // ── Middleware ────────────────────────────────────────────────────────────────
 const requireAuth = (req, res, next) => {
-  if (req.session?.user) return next();
-  res.redirect('/login');
+  if (!req.session?.user) return res.redirect('/login');
+  const u = stmts.findUser.get(req.session.user.username);
+  if (!u || !u.active) { req.session.destroy(() => {}); return res.redirect('/login'); }
+  next();
 };
 const requireAuthAPI = (req, res, next) => {
-  if (req.session?.user) return next();
-  res.status(401).json({ error: 'Unauthorized' });
+  if (!req.session?.user) return res.status(401).json({ error: 'Unauthorized' });
+  const u = stmts.findUser.get(req.session.user.username);
+  if (!u || !u.active) { req.session.destroy(() => {}); return res.status(401).json({ error: 'Unauthorized' }); }
+  next();
 };
 const requireAdmin = (req, res, next) => {
   if (req.session?.user?.role === 'admin') return next();
@@ -130,6 +141,9 @@ app.post('/api/login', (req, res) => {
   if (!user || !bcrypt.compareSync(password, user.password_hash)) {
     return res.status(401).json({ error: 'Invalid username or password' });
   }
+  if (!user.active) {
+    return res.status(403).json({ error: 'Account is disabled' });
+  }
   req.session.user = { username: user.username, role: user.role };
   res.json({ ok: true });
 });
@@ -151,13 +165,13 @@ app.get('/api/admin/users', requireAuthAPI, requireAdmin, (req, res) => {
 });
 
 app.post('/api/admin/users', requireAuthAPI, requireAdmin, (req, res) => {
-  const { username, password, role = 'user' } = req.body;
+  const { username, password, role = 'user', active = true } = req.body;
   if (!username?.trim())  return res.status(400).json({ error: 'Username is required' });
   if (!password?.trim())  return res.status(400).json({ error: 'Password is required' });
   if (!['admin', 'user'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
 
   try {
-    stmts.createUser.run(username.trim(), bcrypt.hashSync(password, 10), role);
+    stmts.createUser.run(username.trim(), bcrypt.hashSync(password, 10), role, active ? 1 : 0);
     res.status(201).json({ ok: true });
   } catch (err) {
     if (err.message.includes('UNIQUE')) return res.status(409).json({ error: 'Username already exists' });
@@ -167,17 +181,21 @@ app.post('/api/admin/users', requireAuthAPI, requireAdmin, (req, res) => {
 
 app.put('/api/admin/users/:username', requireAuthAPI, requireAdmin, (req, res) => {
   const { username } = req.params;
-  const { password, role } = req.body;
+  const { password, role, active } = req.body;
 
   if (!stmts.findUser.get(username)) return res.status(404).json({ error: 'User not found' });
 
-  // Prevent an admin from removing their own admin role
+  // Prevent an admin from demoting or disabling their own account
   if (username === req.session.user.username && role === 'user') {
     return res.status(400).json({ error: 'Cannot demote your own account' });
+  }
+  if (username === req.session.user.username && active === false) {
+    return res.status(400).json({ error: 'Cannot disable your own account' });
   }
 
   if (password?.trim()) stmts.updatePass.run(bcrypt.hashSync(password, 10), username);
   if (role && ['admin', 'user'].includes(role)) stmts.updateRole.run(role, username);
+  if (typeof active === 'boolean') stmts.updateActive.run(active ? 1 : 0, username);
 
   res.json({ ok: true });
 });
@@ -267,6 +285,7 @@ app.get('/api/containers/:id', requireAuthAPI, async (req, res) => {
       name:     info.Name.replace('/', ''),
       image:    info.Config.Image,
       status:   info.State.Status,
+      user:     info.Config.User || 'root',
       created:  info.Created,
       started:  info.State.StartedAt,
       finished: info.State.FinishedAt,
@@ -499,10 +518,18 @@ wss.on('connection', async (ws, req) => {
     return;
   }
 
+  const dbUser = stmts.findUser.get(user.username);
+  if (!dbUser || !dbUser.active) {
+    ws.send(JSON.stringify({ type: 'output', data: '\r\n\x1b[31mAccount is disabled.\x1b[0m\r\n' }));
+    ws.close();
+    return;
+  }
+
   const { username } = user;
   const url = new URL(req.url, 'http://localhost');
   const containerId = url.searchParams.get('container');
   const imageName   = url.searchParams.get('image');
+  const root        = url.searchParams.get('root') === '1';
 
   let cmd, args, opts;
 
@@ -519,9 +546,11 @@ wss.on('connection', async (ws, req) => {
         }
       } catch { /* docker unavailable */ }
     }
-    console.log(`[${username}] exec → ${containerId}`);
+    console.log(`[${username}] exec → ${containerId} root:${root}`);
     cmd  = 'docker';
-    args = ['exec', '-it', containerId, 'sh', '-c',
+    args = ['exec', '-it',
+      ...(root ? ['-u', 'root'] : []),
+      containerId, 'sh', '-c',
       'command -v bash >/dev/null 2>&1 && exec bash || exec sh'];
     opts = { name: 'xterm-color', cols: 80, rows: 24, env: process.env };
 
@@ -551,16 +580,17 @@ wss.on('connection', async (ws, req) => {
     }
 
     // Resource limits — clamp to sane bounds regardless of user input
-    const mem = Math.max(64,  Math.min(8192, parseInt(url.searchParams.get('mem')  || '512', 10)));
-    const cpu = Math.max(0.1, Math.min(8,    parseFloat(url.searchParams.get('cpu') || '1')));
+    const mem  = Math.max(64,  Math.min(8192, parseInt(url.searchParams.get('mem')  || '512', 10)));
+    const cpu  = Math.max(0.1, Math.min(8,    parseFloat(url.searchParams.get('cpu') || '1')));
 
-    console.log(`[${username}] run → ${imageName}${volumeName ? ` +vol:${volumeName}` : ''}${networkName ? ` +net:${networkName}` : ''} mem:${mem}m cpu:${cpu}`);
+    console.log(`[${username}] run → ${imageName}${volumeName ? ` +vol:${volumeName}` : ''}${networkName ? ` +net:${networkName}` : ''} mem:${mem}m cpu:${cpu} root:${root}`);
     cmd  = 'docker';
     args = ['run', '-it', '-w', '/data',
       `--label=${LABEL_USER}=${username}`,
       '--label=webterminal=true',
       '--memory', `${mem}m`,
       '--cpus',   String(cpu),
+      ...(!root ? ['--user', '1000:1000'] : []),
       ...(volumeName  ? ['-v', `${volumeName}:/data`]  : []),
       ...(networkName ? ['--network', networkName]      : []),
       imageName, 'sh', '-c',
